@@ -1,0 +1,507 @@
+================================================================================
+                    SKYDECK TABLE BOOKING DEMO — PROJECT GUIDE
+================================================================================
+
+  A real-time table-status and booking system for SkyDeck Rooftop Restaurant
+  Pimpri-Chinchwad, Pune
+
+================================================================================
+
+
+TABLE OF CONTENTS
+-----------------
+  1. Project Overview
+  2. Tech Stack
+  3. Folder Structure
+  4. Environment Variables
+  5. Database Schema
+  6. Seed Data
+  7. Pages & Navigation
+     7.1  Customer Page (/)
+     7.2  Admin Page (/admin)
+     7.3  API Endpoint (/api/admin/verify)
+  8. Real-Time Architecture
+  9. Key Features
+  10. How to Run Locally
+  11. Deployment (Vercel)
+  12. Acceptance Criteria / Demo Script
+  13. What's Out of Scope
+  14. Production Notes
+
+
+================================================================================
+1. PROJECT OVERVIEW
+================================================================================
+
+SkyDeck is a no-login, real-time table booking demo built for a rooftop
+restaurant. It has exactly two user-facing pages:
+
+  • A CUSTOMER PAGE (/) — meant to be opened after scanning a QR code on
+    the restaurant's menu or table tent. Shows live table availability
+    across three zones and lets guests request a table.
+
+  • An ADMIN PAGE (/admin) — used by staff on a tablet or desktop. Shows
+    live incoming booking requests, lets staff confirm/release them, and
+    allows manual table status management (e.g. marking a table as
+    occupied after a walk-in, or as "cleaning" after a guest leaves).
+
+Both pages share the same live data through Supabase Realtime. A status
+change on one page is reflected on the other within 2–3 seconds, with no
+manual refresh needed.
+
+
+================================================================================
+2. TECH STACK
+================================================================================
+
+  Framework       :  Next.js 14 (App Router) + TypeScript
+  Styling         :  Tailwind CSS
+  Database        :  Supabase (PostgreSQL) — free tier
+  Real-Time Sync  :  Supabase Realtime (Postgres Changes)
+  Icons           :  lucide-react
+  Fonts           :  Playfair Display (serif headings) + Inter (body text)
+                     loaded via Google Fonts
+  Deploy Target   :  Vercel
+  Package Manager :  npm
+
+  NO other backend, no auth provider, no payment SDK, no SMS/WhatsApp.
+
+
+================================================================================
+3. FOLDER STRUCTURE
+================================================================================
+
+  Sky/
+  ├── .env.local                          # Environment variables (secrets)
+  ├── seed.sql                            # SQL to seed 16 tables (idempotent)
+  ├── package.json                        # Node dependencies & scripts
+  ├── tailwind.config.ts                  # Tailwind theme (gold palette, fonts)
+  ├── tsconfig.json                       # TypeScript configuration
+  ├── next.config.mjs                     # Next.js configuration
+  ├── postcss.config.mjs                  # PostCSS (required by Tailwind)
+  │
+  └── src/
+      ├── lib/
+      │   ├── supabase.ts                 # Supabase client singleton
+      │   └── types.ts                    # TypeScript types, enums, constants
+      │
+      ├── hooks/
+      │   ├── useRealtimeTables.ts        # Live subscription to `tables` table
+      │   ├── useRealtimeBookings.ts      # Live subscription to `bookings` table
+      │   └── useAutoExpiry.ts            # Auto-expires stale pending bookings
+      │
+      ├── components/
+      │   ├── TableCard.tsx               # Individual table card (status colors)
+      │   └── BookingModal.tsx            # Booking form + confirmation + countdown
+      │
+      └── app/
+          ├── layout.tsx                  # Root HTML layout + SEO metadata
+          ├── globals.css                 # Global styles, fonts, animations
+          ├── page.tsx                    # Customer page (/)
+          │
+          ├── admin/
+          │   └── page.tsx                # Admin dashboard (/admin)
+          │
+          └── api/
+              └── admin/
+                  └── verify/
+                      └── route.ts        # PIN verification API endpoint
+
+
+================================================================================
+4. ENVIRONMENT VARIABLES
+================================================================================
+
+  These are stored in .env.local (never committed to Git):
+
+  NEXT_PUBLIC_SUPABASE_URL       Your Supabase project URL
+                                 (e.g. https://xxxxx.supabase.co)
+
+  NEXT_PUBLIC_SUPABASE_ANON_KEY  Your Supabase anonymous/public API key
+                                 (safe for the browser — gated by RLS)
+
+  ADMIN_PIN                      A numeric PIN for admin page access
+                                 (server-side only — never exposed to client)
+
+  The NEXT_PUBLIC_ prefix means those two values are bundled into the
+  client-side JavaScript. The ADMIN_PIN is only read server-side in the
+  /api/admin/verify route.
+
+
+================================================================================
+5. DATABASE SCHEMA
+================================================================================
+
+  The database lives in Supabase (PostgreSQL). Two custom enums and two
+  tables are used:
+
+  ENUMS:
+  ------
+    table_status   :  'available' | 'pending' | 'occupied' | 'cleaning'
+    booking_status :  'pending' | 'confirmed' | 'cancelled' | 'expired'
+
+  TABLE: tables
+  -------------
+    id          UUID (primary key, auto-generated)
+    label       TEXT (e.g. "R4", "IN2", "O3")
+    zone        TEXT ('Rooftop' | 'Indoor AC' | 'Outdoor')
+    capacity    INT  (number of seats)
+    status      table_status (default: 'available')
+    updated_at  TIMESTAMPTZ (auto-set)
+
+  TABLE: bookings
+  ---------------
+    id          UUID (primary key, auto-generated)
+    table_id    UUID (foreign key → tables.id)
+    guest_name  TEXT
+    phone       TEXT (10-digit Indian number)
+    party_size  INT
+    note        TEXT (nullable)
+    status      booking_status (default: 'pending')
+    created_at  TIMESTAMPTZ (auto-set)
+
+  IMPORTANT: Supabase Realtime must be enabled on BOTH tables
+  (Database → Replication → enable tables & bookings).
+
+  Row Level Security (RLS) is set to fully permissive for this demo.
+  This must be locked down before any real production use.
+
+
+================================================================================
+6. SEED DATA
+================================================================================
+
+  The seed.sql file inserts 16 tables across three zones. It is
+  idempotent (uses ON CONFLICT DO NOTHING), so it's safe to run
+  multiple times.
+
+  ROOFTOP (R1–R6):
+    R1 = 2 seats,  R2 = 4 seats,  R3 = 4 seats
+    R4 = 6 seats,  R5 = 4 seats,  R6 = 2 seats
+
+  INDOOR AC (IN1–IN5):
+    IN1 = 2 seats, IN2 = 4 seats, IN3 = 4 seats
+    IN4 = 6 seats, IN5 = 8 seats
+
+  OUTDOOR (O1–O5):
+    O1 = 2 seats,  O2 = 4 seats,  O3 = 4 seats
+    O4 = 6 seats,  O5 = 4 seats
+
+  NOTE: The banquet hall is intentionally excluded from this demo.
+  It is normally booked as a whole event space, not walk-in tables.
+
+  HOW TO RUN: Copy the contents of seed.sql into the Supabase
+  Dashboard → SQL Editor → New Query → Run.
+
+
+================================================================================
+7. PAGES & NAVIGATION
+================================================================================
+
+  There are exactly two user-facing routes and one API route:
+
+    /               → Customer Page (public, no login)
+    /admin          → Admin Page (PIN-protected)
+    /api/admin/verify → PIN verification endpoint (internal)
+
+
+  7.1  CUSTOMER PAGE  (/)
+  ========================
+
+    PURPOSE:
+      Scanned via QR code by restaurant guests. Shows live table
+      availability and lets guests request a table.
+
+    LAYOUT:
+      • Header: "SkyDeck" wordmark (gold accent) + "Live Table Availability"
+      • Zone tabs: Rooftop / Indoor AC / Outdoor
+        Each tab shows "X/Y free" count
+      • Table grid: 2-column on mobile, 3-column on desktop
+      • Footer: Restaurant name and location
+
+    TABLE CARDS:
+      Each card shows the table label (e.g. "R4"), seat capacity
+      with a people icon, and a color-coded status badge:
+
+        Available  → Green badge, pulsing dot, card is tappable
+        Pending    → Amber badge, text "Reserved — Confirming"
+        Occupied   → Red badge
+        Cleaning   → Blue/sky badge, text "Being Cleaned"
+
+      Only "Available" tables can be tapped. Others are view-only.
+
+    BOOKING FLOW:
+      1. Tap an available table → a modal/bottom-sheet opens
+      2. Fill in:
+         • Name (required)
+         • Phone (required, 10-digit Indian number with +91 prefix)
+         • Party size (stepper: min 1, max = table capacity)
+         • Note (optional, e.g. "birthday", "near the edge")
+      3. Tap "Request This Table"
+      4. The system re-checks the table is still available (race guard)
+         • If taken: shows "Sorry, this table was just taken" error
+         • If available: creates the booking and updates table to pending
+      5. Confirmation screen appears:
+         • Booking reference (last 6 characters of booking ID)
+         • Message: "Please walk up to reception within 10 minutes"
+         • Live countdown timer (10:00 → 0:00)
+
+    AUTO-EXPIRY:
+      A background interval runs every 30 seconds. It checks for
+      pending bookings older than 10 minutes and automatically:
+        • Sets the booking status to "expired"
+        • Returns the table status to "available"
+
+      NOTE: In production, this should be a Supabase Edge Function
+      or pg_cron job, not a client-side timer.
+
+
+  7.2  ADMIN PAGE  (/admin)
+  ==========================
+
+    ACCESS:
+      A PIN entry screen gates access. The PIN is validated server-side
+      against the ADMIN_PIN environment variable. Once validated, the
+      session is stored in the browser's sessionStorage (tab-scoped).
+
+      This is demo-only security, not production-grade.
+
+    LAYOUT (after PIN entry):
+
+      HEADER:
+        "SkyDeck Staff Panel" with a "Sign Out" button
+
+      SECTION 1 — LIVE TABLE GRID:
+        Same visual grid as the customer page, but ALL tables are
+        clickable regardless of status. Clicking cycles the status:
+
+          Available → Occupied → Cleaning → Available
+
+        This lets staff quickly mark walk-ins (→ occupied) or
+        finished tables (→ cleaning → available) without going
+        through the booking flow.
+
+      SECTION 2 — REQUEST QUEUE:
+        Shows all pending bookings, newest first. Each card shows:
+          • Guest name
+          • Phone number (tap-to-call link with +91 prefix)
+          • Party size
+          • Table label (e.g. "R4")
+          • Optional note
+          • Time since request (e.g. "3m ago")
+          • Live countdown to expiry
+
+        Two action buttons per booking:
+          • "Confirm & Seat" → booking → confirmed, table → occupied
+          • "Release" → booking → cancelled, table → available
+
+      SECTION 3 — RECENT HISTORY (collapsed by default):
+        Shows the last 10 confirmed/cancelled/expired bookings
+        for staff context. Visually secondary. Click to expand.
+
+    Everything updates live via Supabase Realtime — no refresh needed.
+
+
+  7.3  API ENDPOINT  (/api/admin/verify)
+  ========================================
+
+    METHOD:  POST
+    BODY:    { "pin": "123456" }
+    PURPOSE: Validates the PIN against process.env.ADMIN_PIN
+    RETURNS: { "success": true } or { "error": "Invalid PIN" }
+
+    This keeps the ADMIN_PIN server-side only. The client never
+    sees the actual PIN value.
+
+
+================================================================================
+8. REAL-TIME ARCHITECTURE
+================================================================================
+
+  The app uses Supabase Realtime's "Postgres Changes" feature to
+  keep both pages in sync:
+
+    ┌─────────────────┐         ┌──────────────┐
+    │  Customer Page   │◄───────►│   Supabase   │
+    │  (phone/browser) │  WS     │  Realtime    │
+    └─────────────────┘         │  (WebSocket) │
+                                │              │
+    ┌─────────────────┐         │              │
+    │  Admin Page      │◄───────►│              │
+    │  (tablet/laptop) │  WS     └──────┬───────┘
+    └─────────────────┘                │
+                                ┌──────┴───────┐
+                                │  PostgreSQL  │
+                                │  (tables +   │
+                                │   bookings)  │
+                                └──────────────┘
+
+  FLOW:
+    1. Customer or admin writes to Postgres (insert/update)
+    2. Supabase Realtime broadcasts the change via WebSocket
+    3. All connected clients receive the event and update their UI
+
+  TWO CHANNELS:
+    • "tables-realtime" — listens for INSERT/UPDATE/DELETE on `tables`
+    • "bookings-realtime" — listens for changes on `bookings`
+
+  The hooks (useRealtimeTables.ts and useRealtimeBookings.ts) manage
+  these subscriptions. On mount they fetch the initial data, then
+  apply real-time patches as events arrive.
+
+
+================================================================================
+9. KEY FEATURES
+================================================================================
+
+  ✓ Live table grid with color-coded status
+  ✓ Zone-based filtering (Rooftop / Indoor AC / Outdoor)
+  ✓ Booking form with input validation (10-digit phone, party size cap)
+  ✓ Race condition handling (double-booking prevention)
+  ✓ Confirmation screen with booking reference and 10-min countdown
+  ✓ Auto-expiry of unconfirmed bookings after 10 minutes
+  ✓ Admin PIN gate (server-side validation)
+  ✓ Admin table status cycling (available → occupied → cleaning)
+  ✓ Admin request queue with Confirm & Seat / Release actions
+  ✓ Tap-to-call phone links on admin booking cards
+  ✓ Recent booking history (collapsible)
+  ✓ Cross-device real-time sync via Supabase Realtime
+  ✓ Mobile-first responsive design
+  ✓ Dark "rooftop at night" aesthetic with gold accents
+  ✓ Smooth CSS animations (modal slide-up, hover effects, pulse)
+  ✓ SEO metadata (title, description)
+
+
+================================================================================
+10. HOW TO RUN LOCALLY
+================================================================================
+
+  PREREQUISITES:
+    • Node.js 18+ installed
+    • A Supabase project with the tables/enums already created
+    • Realtime enabled on both tables in Supabase Dashboard
+
+  STEPS:
+
+    1. Clone or download the project
+
+    2. Make sure .env.local exists with your values:
+         NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
+         NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
+         ADMIN_PIN=your-chosen-pin
+
+    3. Install dependencies:
+         npm install
+
+    4. Seed the database (if not already done):
+         Copy seed.sql contents → Supabase Dashboard → SQL Editor → Run
+
+    5. Start the development server:
+         npm run dev
+
+    6. Open in browser:
+         Customer page:  http://localhost:3000
+         Admin page:     http://localhost:3000/admin
+
+
+================================================================================
+11. DEPLOYMENT (VERCEL)
+================================================================================
+
+  1. Push the project to a GitHub repository
+
+  2. Import the repo in Vercel (vercel.com → New Project)
+
+  3. Set these environment variables in Vercel's project settings:
+       NEXT_PUBLIC_SUPABASE_URL      = your Supabase URL
+       NEXT_PUBLIC_SUPABASE_ANON_KEY = your Supabase anon key
+       ADMIN_PIN                     = your admin PIN
+
+  4. Deploy — Vercel auto-detects Next.js and builds it
+
+  5. The customer page will be live at your Vercel URL's root (/)
+     The admin page will be at /admin
+
+  You can then attach a custom domain and generate a QR code
+  pointing to the customer page.
+
+
+================================================================================
+12. ACCEPTANCE CRITERIA / DEMO SCRIPT
+================================================================================
+
+  These are the exact scenarios the app is designed to handle:
+
+  1. Open / on a phone
+     → See the 16-table grid grouped by zone, all green/available
+
+  2. Tap an available table → fill form → submit
+     → See confirmation + 10-min countdown
+     → Table turns amber on the grid
+
+  3. Open /admin on a laptop (enter PIN)
+     → See the new request appear in the queue within seconds
+     → No page refresh needed
+
+  4. Click "Confirm & Seat" on admin
+     → Table turns red/occupied on BOTH the admin grid AND the
+       customer page (open in another tab) within seconds
+
+  5. On admin grid, click an occupied table
+     → Cycles to "Cleaning" → click again → "Available"
+     → Reflected live on customer page
+
+  6. Try booking an already-pending table from a second browser tab
+     → Get the "Sorry, this table was just taken" message
+     → No duplicate booking created
+
+  7. Leave a booking unconfirmed for 10+ minutes
+     → It auto-expires and the table returns to available
+
+
+================================================================================
+13. WHAT'S OUT OF SCOPE
+================================================================================
+
+  The following features are intentionally NOT built in this demo:
+
+    ✗ Payments or deposits
+    ✗ SMS / WhatsApp / email notifications
+    ✗ Menu browsing or food ordering
+    ✗ Multi-restaurant support
+    ✗ Real staff accounts/roles (just a shared PIN)
+    ✗ Banquet hall event booking
+    ✗ Waitlist / queue-position algorithm
+
+
+================================================================================
+14. PRODUCTION NOTES
+================================================================================
+
+  If this demo were to go into real production use, these changes
+  would be necessary:
+
+  SECURITY:
+    • Enable Row Level Security (RLS) on both tables with proper
+      policies (e.g. anon can only SELECT tables, INSERT bookings)
+    • Replace the shared PIN with Supabase Auth or NextAuth for
+      real staff accounts and role-based access
+
+  AUTO-EXPIRY:
+    • Replace the client-side expiry timer with a Supabase Edge
+      Function or pg_cron job that runs every minute server-side
+
+  NOTIFICATIONS:
+    • Add SMS/WhatsApp confirmation when a booking is confirmed
+    • Alert staff via push notification for new requests
+
+  SCALE:
+    • Add proper error boundaries and loading states
+    • Implement optimistic UI updates for snappier interactions
+    • Add rate limiting on the booking endpoint
+    • Consider connection pooling for high-traffic scenarios
+
+
+================================================================================
+                              END OF PROJECT GUIDE
+================================================================================
