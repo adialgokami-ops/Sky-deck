@@ -1,7 +1,7 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
-import { X, Minus, Plus, CheckCircle2, AlertCircle } from 'lucide-react';
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { X, Minus, Plus, CheckCircle2, AlertCircle, XCircle, Clock } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import type { Table } from '@/lib/types';
 import { EXPIRY_MINUTES } from '@/lib/types';
@@ -12,7 +12,7 @@ interface BookingModalProps {
   onBooked: () => void;
 }
 
-type ModalState = 'form' | 'submitting' | 'confirmed' | 'error';
+type ModalState = 'form' | 'submitting' | 'confirmed' | 'admin_confirmed' | 'admin_cancelled' | 'expired' | 'error';
 
 export default function BookingModal({ table, onClose, onBooked }: BookingModalProps) {
   const [state, setState] = useState<ModalState>('form');
@@ -24,10 +24,45 @@ export default function BookingModal({ table, onClose, onBooked }: BookingModalP
   const [bookingRef, setBookingRef] = useState('');
   const [countdown, setCountdown] = useState(EXPIRY_MINUTES * 60);
   const [bookingCreatedAt, setBookingCreatedAt] = useState<Date | null>(null);
+  const bookingIdRef = useRef<string | null>(null);
 
   // Phone validation: exactly 10 digits (India format)
   const isPhoneValid = /^\d{10}$/.test(phone);
   const isFormValid = name.trim().length > 0 && isPhoneValid && partySize >= 1;
+
+  // Subscribe to realtime booking status changes after booking is created
+  useEffect(() => {
+    if (!bookingIdRef.current || state === 'form' || state === 'submitting' || state === 'error') return;
+
+    const bookingId = bookingIdRef.current;
+
+    const channel = supabase
+      .channel(`booking-status-${bookingId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'bookings',
+          filter: `id=eq.${bookingId}`,
+        },
+        (payload) => {
+          const newStatus = (payload.new as { status: string }).status;
+          if (newStatus === 'confirmed') {
+            setState('admin_confirmed');
+          } else if (newStatus === 'cancelled') {
+            setState('admin_cancelled');
+          } else if (newStatus === 'expired') {
+            setState('expired');
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [state]);
 
   // Countdown timer
   useEffect(() => {
@@ -39,6 +74,7 @@ export default function BookingModal({ table, onClose, onBooked }: BookingModalP
       setCountdown(Math.max(0, remaining));
       if (remaining <= 0) {
         clearInterval(interval);
+        setState('expired');
       }
     }, 1000);
 
@@ -95,6 +131,9 @@ export default function BookingModal({ table, onClose, onBooked }: BookingModalP
         .from('tables')
         .update({ status: 'pending', updated_at: new Date().toISOString() })
         .eq('id', table.id);
+
+      // Store the booking ID for realtime subscription
+      bookingIdRef.current = booking.id;
 
       // Show confirmation
       setBookingRef(booking.id.slice(-6).toUpperCase());
@@ -245,8 +284,8 @@ export default function BookingModal({ table, onClose, onBooked }: BookingModalP
 
         {state === 'confirmed' && (
           <div className="flex flex-col items-center py-6 text-center">
-            <div className="mb-4 rounded-full bg-emerald-50 dark:bg-emerald-500/10 p-3">
-              <CheckCircle2 size={40} className="text-emerald-600 dark:text-emerald-400" />
+            <div className="mb-4 rounded-full bg-amber-50 dark:bg-amber-500/10 p-3">
+              <Clock size={40} className="text-amber-600 dark:text-amber-400" />
             </div>
             <h2 className="font-serif text-2xl font-bold text-stone-900 dark:text-white mb-2">
               Table Requested!
@@ -255,7 +294,7 @@ export default function BookingModal({ table, onClose, onBooked }: BookingModalP
               Booking Ref: <span className="font-mono text-amber-600 dark:text-amber-400 font-bold">{bookingRef}</span>
             </p>
             <p className="text-sm text-stone-500 dark:text-white/60 leading-relaxed mb-6 max-w-sm">
-              Please walk up to the reception desk to confirm your table within 10 minutes, or it will be released automatically.
+              Please walk up to the reception desk to confirm your table within {EXPIRY_MINUTES} minutes, or it will be released automatically.
             </p>
 
             {/* Countdown */}
@@ -269,6 +308,88 @@ export default function BookingModal({ table, onClose, onBooked }: BookingModalP
                 {formatTime(countdown)}
               </p>
             </div>
+
+            <p className="mt-4 text-xs text-stone-400 dark:text-white/30">
+              This page will update automatically when confirmed
+            </p>
+          </div>
+        )}
+
+        {/* Admin confirmed the booking */}
+        {state === 'admin_confirmed' && (
+          <div className="flex flex-col items-center py-6 text-center">
+            <div className="mb-4 rounded-full bg-emerald-50 dark:bg-emerald-500/10 p-4">
+              <CheckCircle2 size={48} className="text-emerald-600 dark:text-emerald-400" />
+            </div>
+            <h2 className="font-serif text-2xl font-bold text-stone-900 dark:text-white mb-2">
+              Booking Confirmed!
+            </h2>
+            <p className="text-sm text-stone-500 dark:text-white/50 mb-2">
+              Booking Ref: <span className="font-mono text-amber-600 dark:text-amber-400 font-bold">{bookingRef}</span>
+            </p>
+            <p className="text-sm text-emerald-600 dark:text-emerald-400 font-medium leading-relaxed mb-6 max-w-sm">
+              Your table has been confirmed by the staff. Please proceed to your table. Enjoy your time at SkyDeck!
+            </p>
+
+            <div className="rounded-2xl border border-emerald-200 dark:border-emerald-500/20 bg-emerald-50 dark:bg-emerald-500/10 px-6 py-4 backdrop-blur-sm">
+              <p className="text-xs text-emerald-600/70 dark:text-emerald-400/60 uppercase tracking-wider mb-1">
+                Status
+              </p>
+              <p className="font-semibold text-lg text-emerald-700 dark:text-emerald-300">
+                ✓ Confirmed &amp; Seated
+              </p>
+            </div>
+
+            <button
+              onClick={onClose}
+              className="mt-6 w-full rounded-xl bg-gradient-to-r from-emerald-600 to-emerald-500 px-6 py-3 font-semibold text-white shadow-lg shadow-emerald-400/25 dark:shadow-emerald-500/20 transition-all hover:shadow-emerald-400/40 dark:hover:shadow-emerald-500/40 active:scale-[0.98]"
+            >
+              Done
+            </button>
+          </div>
+        )}
+
+        {/* Admin cancelled / released the booking */}
+        {state === 'admin_cancelled' && (
+          <div className="flex flex-col items-center py-6 text-center">
+            <div className="mb-4 rounded-full bg-red-50 dark:bg-red-500/10 p-4">
+              <XCircle size={48} className="text-red-600 dark:text-red-400" />
+            </div>
+            <h2 className="font-serif text-2xl font-bold text-stone-900 dark:text-white mb-2">
+              Booking Released
+            </h2>
+            <p className="text-sm text-stone-500 dark:text-white/60 leading-relaxed mb-6 max-w-sm">
+              Your table request has been released by the staff. The table is now available for others. Please try booking another table.
+            </p>
+
+            <button
+              onClick={onClose}
+              className="rounded-xl border border-stone-200 dark:border-white/10 bg-stone-50 dark:bg-white/5 px-6 py-2.5 text-sm font-medium text-stone-900 dark:text-white transition-colors hover:bg-stone-100 dark:hover:bg-white/10"
+            >
+              Pick Another Table
+            </button>
+          </div>
+        )}
+
+        {/* Booking expired */}
+        {state === 'expired' && (
+          <div className="flex flex-col items-center py-6 text-center">
+            <div className="mb-4 rounded-full bg-stone-100 dark:bg-white/5 p-4">
+              <Clock size={48} className="text-stone-400 dark:text-white/40" />
+            </div>
+            <h2 className="font-serif text-2xl font-bold text-stone-900 dark:text-white mb-2">
+              Time Expired
+            </h2>
+            <p className="text-sm text-stone-500 dark:text-white/60 leading-relaxed mb-6 max-w-sm">
+              Your reservation time has expired and the table has been released. Please try booking another table.
+            </p>
+
+            <button
+              onClick={onClose}
+              className="rounded-xl border border-stone-200 dark:border-white/10 bg-stone-50 dark:bg-white/5 px-6 py-2.5 text-sm font-medium text-stone-900 dark:text-white transition-colors hover:bg-stone-100 dark:hover:bg-white/10"
+            >
+              Pick Another Table
+            </button>
           </div>
         )}
 
