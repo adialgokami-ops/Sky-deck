@@ -1,11 +1,34 @@
 'use client';
 
+import { useMemo, useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
 import { useScrollReveal } from '@/hooks/useScrollReveal';
+import { useRealtimeTables } from '@/hooks/useRealtimeTables';
 
 export default function Hero() {
   const revealRef = useScrollReveal();
+  const { tables, loading } = useRealtimeTables();
+
+  // Calculate live available tables across all zones (Rooftop + Indoor AC + Outdoor + Family Bar)
+  const availableCount = useMemo(() => {
+    return tables.filter((t) => t.status === 'available').length;
+  }, [tables]);
+
+  // Flash / pulse highlight whenever availability changes
+  const [hasChanged, setHasChanged] = useState(false);
+  const prevCountRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    if (!loading && prevCountRef.current !== null && prevCountRef.current !== availableCount) {
+      setHasChanged(true);
+      const timer = setTimeout(() => setHasChanged(false), 1200);
+      return () => clearTimeout(timer);
+    }
+    if (!loading) {
+      prevCountRef.current = availableCount;
+    }
+  }, [availableCount, loading]);
 
   return (
     <section className="relative min-h-screen flex items-center justify-center overflow-hidden">
@@ -39,15 +62,43 @@ export default function Hero() {
 
         {/* Subhead */}
         <p className="mx-auto max-w-lg text-lg sm:text-xl text-[#A69E93] leading-relaxed mb-8 font-light">
-          Live seating across three curated zones — Rooftop, Indoor AC &amp; Outdoor — with tables updating in real time.
+          Live seating across four curated zones — Rooftop, Indoor AC, Outdoor &amp; Family Bar — with tables updating in real time.
         </p>
 
-        {/* Live counter */}
-        <div className="mb-10 inline-flex items-center gap-2 rounded-full bg-[#1A1815]/80 border border-white/[0.06] px-5 py-2.5 backdrop-blur-md">
-          <span className="h-2 w-2 rounded-full bg-[#7A9B6B] animate-pulse" />
-          <span className="text-sm text-[#A69E93]">
-            <span className="font-semibold text-[#F4EFE8]">12</span> tables open right now
-          </span>
+        {/* Realtime Live Table Counter */}
+        <div
+          className={`mb-10 inline-flex items-center gap-2.5 rounded-full bg-[#1A1815]/80 border px-5 py-2.5 backdrop-blur-md transition-all duration-300 ${
+            hasChanged
+              ? 'border-amber-400/60 bg-[#D98E3F]/15 shadow-lg shadow-amber-500/20 scale-105'
+              : 'border-white/[0.08] shadow-sm'
+          }`}
+        >
+          {loading ? (
+            <>
+              <span className="h-2 w-2 rounded-full bg-white/40 animate-pulse" />
+              <span className="text-sm text-[#A69E93] flex items-center gap-1.5">
+                <span className="inline-block h-3.5 w-6 rounded bg-white/10 animate-pulse" />
+                <span>checking live tables…</span>
+              </span>
+            </>
+          ) : availableCount === 0 ? (
+            <>
+              <span className="h-2 w-2 rounded-full bg-red-400" />
+              <span className="text-sm font-medium text-[#E0A899]">
+                Fully booked right now
+              </span>
+            </>
+          ) : (
+            <>
+              <span className="h-2 w-2 rounded-full bg-[#7A9B6B] animate-pulse shadow-[0_0_8px_rgba(122,155,107,0.8)]" />
+              <span className="text-sm text-[#A69E93]">
+                <span className={`font-bold text-[#F4EFE8] transition-colors ${hasChanged ? 'text-amber-300' : ''}`}>
+                  {availableCount}
+                </span>{' '}
+                {availableCount === 1 ? 'table' : 'tables'} open right now
+              </span>
+            </>
+          )}
         </div>
 
         {/* CTAs */}

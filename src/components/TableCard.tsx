@@ -23,56 +23,63 @@ export default function TableCard({ table, onClick, adminMode }: TableCardProps)
       className={`
         group relative w-full rounded-2xl border p-4 text-left
         transition-all duration-300 ease-out
-        ${config.border} ${config.bg}
-        ${isClickable
-          ? 'cursor-pointer hover:scale-[1.03] hover:shadow-lg active:scale-[0.98]'
-          : 'cursor-default opacity-80'
+        backdrop-blur-xl shadow-lg shadow-black/20
+        ${
+          table.status === 'available'
+            ? 'bg-white/[0.08] hover:bg-white/[0.14] border-white/[0.18] hover:border-emerald-400/50 hover:shadow-emerald-500/10'
+            : table.status === 'pending'
+            ? 'bg-amber-500/[0.08] border-amber-500/30 opacity-90'
+            : table.status === 'occupied'
+            ? 'bg-red-500/[0.06] border-red-500/20 opacity-70 cursor-not-allowed'
+            : 'bg-sky-500/[0.06] border-sky-500/20 opacity-75'
         }
-        ${config.glow}
-        backdrop-blur-sm
+        ${isClickable
+          ? 'cursor-pointer hover:scale-[1.02] active:scale-[0.98]'
+          : 'cursor-default'
+        }
       `}
     >
-      {/* Status indicator line */}
+      {/* Left glowing status indicator bar */}
       <div
         className={`absolute left-0 top-0 h-full w-1 rounded-l-2xl transition-colors duration-300 ${
           table.status === 'available'
-            ? 'bg-emerald-500'
+            ? 'bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.8)]'
             : table.status === 'pending'
-            ? 'bg-amber-500'
+            ? 'bg-amber-400 shadow-[0_0_8px_rgba(251,191,36,0.8)]'
             : table.status === 'occupied'
-            ? 'bg-red-500'
-            : 'bg-sky-500'
+            ? 'bg-red-400/80'
+            : 'bg-sky-400/80'
         }`}
       />
 
       {/* Table label */}
       <div className="mb-2 flex items-center justify-between">
-        <span className="font-serif text-xl font-bold text-stone-800 dark:text-white/90">
+        <span className="font-serif text-xl font-bold text-[#F4EFE8] drop-shadow-sm">
           {table.label}
         </span>
         {isClickable && (
-          <span className="text-xs text-stone-400 dark:text-white/30 opacity-0 transition-opacity group-hover:opacity-100">
-            {adminMode ? 'Tap to cycle' : 'Tap to book'}
+          <span className="text-[11px] font-medium text-amber-300/80 opacity-0 transition-opacity group-hover:opacity-100">
+            {adminMode ? 'Tap to cycle' : 'Tap to book →'}
           </span>
         )}
       </div>
 
       {/* Capacity */}
-      <div className="mb-3 flex items-center gap-1.5 text-sm text-stone-500 dark:text-white/50">
-        <Users size={14} />
+      <div className="mb-3 flex items-center gap-1.5 text-xs text-[#A69E93]">
+        <Users size={13} className="text-white/50" />
         <span>{table.capacity} seats</span>
       </div>
 
       {/* Status badge */}
       <div
-        className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium ${config.bg} ${config.color} ${config.border} border`}
+        className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold backdrop-blur-md border ${config.bg} ${config.color} ${config.border}`}
       >
         <span
           className={`h-1.5 w-1.5 rounded-full ${
             table.status === 'available'
-              ? 'bg-emerald-400 animate-pulse'
+              ? 'bg-emerald-400 animate-pulse shadow-[0_0_6px_rgba(52,211,153,0.9)]'
               : table.status === 'pending'
-              ? 'bg-amber-400 animate-pulse'
+              ? 'bg-amber-400 animate-pulse shadow-[0_0_6px_rgba(251,191,36,0.9)]'
               : table.status === 'occupied'
               ? 'bg-red-400'
               : 'bg-sky-400 animate-pulse'
