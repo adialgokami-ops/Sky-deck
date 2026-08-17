@@ -30,30 +30,39 @@ export default function BookingModal({ table, onClose, onBooked }: BookingModalP
   const isPhoneValid = /^\d{10}$/.test(phone);
   const isFormValid = name.trim().length > 0 && isPhoneValid && partySize >= 1;
 
+  // Helper to transition modal state based on booking status from DB
+  const handleBookingStatusChange = useCallback((newStatus: string) => {
+    if (newStatus === 'confirmed') {
+      setState('admin_confirmed');
+    } else if (newStatus === 'cancelled') {
+      setState('admin_cancelled');
+    } else if (newStatus === 'expired') {
+      setState('expired');
+    }
+  }, []);
+
   // Subscribe to realtime booking status changes after booking is created
+  // Uses unfiltered subscription (matching the working useRealtimeBookings pattern)
+  // because filtered subscriptions require REPLICA IDENTITY FULL on the table
   useEffect(() => {
     if (!bookingIdRef.current || state === 'form' || state === 'submitting' || state === 'error') return;
 
     const bookingId = bookingIdRef.current;
 
     const channel = supabase
-      .channel(`booking-status-${bookingId}`)
+      .channel(`booking-modal-${bookingId}`)
       .on(
         'postgres_changes',
         {
           event: 'UPDATE',
           schema: 'public',
           table: 'bookings',
-          filter: `id=eq.${bookingId}`,
         },
         (payload) => {
-          const newStatus = (payload.new as { status: string }).status;
-          if (newStatus === 'confirmed') {
-            setState('admin_confirmed');
-          } else if (newStatus === 'cancelled') {
-            setState('admin_cancelled');
-          } else if (newStatus === 'expired') {
-            setState('expired');
+          // Check if this update is for our booking
+          const updated = payload.new as { id: string; status: string };
+          if (updated.id === bookingId) {
+            handleBookingStatusChange(updated.status);
           }
         }
       )
@@ -62,7 +71,34 @@ export default function BookingModal({ table, onClose, onBooked }: BookingModalP
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [state]);
+  }, [state, handleBookingStatusChange]);
+
+  // Polling fallback: check booking status every 5 seconds
+  // In case Realtime doesn't deliver the event (network issues, config, etc.)
+  useEffect(() => {
+    if (!bookingIdRef.current || state !== 'confirmed') return;
+
+    const bookingId = bookingIdRef.current;
+
+    const pollStatus = async () => {
+      try {
+        const { data, error } = await supabase
+          .from('bookings')
+          .select('status')
+          .eq('id', bookingId)
+          .single();
+
+        if (!error && data && data.status !== 'pending') {
+          handleBookingStatusChange(data.status);
+        }
+      } catch {
+        // Silently ignore polling errors
+      }
+    };
+
+    const interval = setInterval(pollStatus, 5000);
+    return () => clearInterval(interval);
+  }, [state, handleBookingStatusChange]);
 
   // Countdown timer
   useEffect(() => {

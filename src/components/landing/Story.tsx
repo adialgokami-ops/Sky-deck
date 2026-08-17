@@ -1,68 +1,58 @@
 'use client';
 
-import { useRef, useEffect, useState } from 'react';
 import Image from 'next/image';
+import { useScrollReveal } from '@/hooks/useScrollReveal';
 
 export default function Story() {
-  const ref = useRef<HTMLElement>(null);
-  const [visible, setVisible] = useState(false);
-
-  useEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-    const observer = new IntersectionObserver(
-      ([entry]) => { if (entry.isIntersecting) setVisible(true); },
-      { threshold: 0.15 }
-    );
-    observer.observe(el);
-    return () => observer.disconnect();
-  }, []);
+  const revealRef = useScrollReveal();
 
   return (
-    <section
-      id="story"
-      ref={ref}
-      className={`mx-auto max-w-6xl px-5 py-24 sm:px-8 sm:py-32 transition-all duration-700 ${
-        visible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-8'
-      }`}
-    >
-      <div className="grid gap-12 md:grid-cols-2 md:items-center md:gap-16">
-        {/* Text */}
-        <div>
-          <h2 className="font-serif text-3xl font-bold text-stone-900 dark:text-white sm:text-4xl">
-            A table with a view
-          </h2>
-          <div className="mt-6 space-y-4 text-base leading-relaxed text-stone-500 dark:text-white/50">
-            <p>
-              SkyDeck sits five stories above the Pimpri-Chinchwad skyline, where
-              the evening breeze carries the warmth of open-flame grills and the
-              last light of the day paints the horizon amber and rose.
+    <section id="story" className="relative py-24 sm:py-32 overflow-hidden">
+      <div ref={revealRef} className="reveal mx-auto max-w-7xl px-5 sm:px-8">
+        <div className="grid lg:grid-cols-2 gap-12 lg:gap-20 items-center">
+          {/* Text side */}
+          <div>
+            <p className="text-sm font-medium tracking-[0.2em] uppercase text-[#D98E3F] mb-4">Our Story</p>
+            <h2 className="font-display text-3xl sm:text-4xl lg:text-5xl font-bold text-[#F4EFE8] tracking-tight leading-[1.1] mb-6">
+              Where the skyline<br />meets the plate.
+            </h2>
+            <p className="text-[#A69E93] text-lg leading-relaxed mb-8 max-w-lg">
+              Perched above Pimpri-Chinchwad, SkyDeck transforms golden-hour light into an unforgettable dining backdrop. Our seasonal menu blends modern Indian technique with locally sourced ingredients — designed to be tasted under open skies and string lights.
             </p>
-            <p>
-              Our seasonal menu draws from local harvests and modern technique —
-              dishes built around what&apos;s ripe, honest, and worth sharing over
-              a long table.
-            </p>
-            <p>
-              Whether you&apos;re here for a quiet dinner under the stars or a
-              celebration that deserves a skyline backdrop, the evening is yours
-              to shape.
-            </p>
-          </div>
-        </div>
 
-        {/* Image */}
-        <div className="relative aspect-[4/5] overflow-hidden rounded-2xl border border-stone-200 dark:border-white/5 bg-white dark:bg-white/[0.02]">
-          {/* TODO: Replace with a real atmospheric photo of SkyDeck's rooftop */}
-          <Image
-            src="/images/story.jpg"
-            alt="SkyDeck rooftop dining area at golden hour with warm ambient lighting"
-            fill
-            className="object-cover"
-            sizes="(max-width: 768px) 100vw, 50vw"
-          />
-          {/* Gradient overlay for depth */}
-          <div className="absolute inset-0 bg-gradient-to-t from-[#FAF9F6]/40 dark:from-[#0F0F12]/60 via-transparent to-transparent" />
+            {/* Chef card */}
+            <div className="flex items-center gap-4 rounded-2xl border border-white/[0.06] bg-[#1A1815] p-4">
+              <div className="relative h-16 w-16 rounded-xl overflow-hidden shrink-0">
+                <Image
+                  src="/images/chef.jpg"
+                  alt="Chef Arjun Mehta"
+                  fill
+                  className="object-cover"
+                />
+              </div>
+              <div>
+                <p className="font-display text-base font-semibold text-[#F4EFE8]">Chef Arjun Mehta</p>
+                <p className="text-sm text-[#A69E93] leading-relaxed">
+                  Formerly at Masque, Mumbai. Brings bold, boundary-pushing flavours to every plate at SkyDeck.
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {/* Image side */}
+          <div className="relative">
+            <div className="relative aspect-[4/5] rounded-3xl overflow-hidden">
+              <Image
+                src="/images/story.jpg"
+                alt="SkyDeck restaurant ambience"
+                fill
+                className="object-cover"
+              />
+              <div className="absolute inset-0 bg-gradient-to-t from-[#12100E]/40 to-transparent" />
+            </div>
+            {/* Accent border */}
+            <div className="absolute -inset-3 rounded-[28px] border border-[#D98E3F]/10 -z-10" />
+          </div>
         </div>
       </div>
     </section>

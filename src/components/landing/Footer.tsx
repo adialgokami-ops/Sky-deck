@@ -1,92 +1,99 @@
-import Link from 'next/link';
-import { Globe, Mail, Phone } from 'lucide-react';
+'use client';
 
-const QUICK_LINKS = [
-  { label: 'Our Story', href: '#story' },
-  { label: 'Zones', href: '#zones' },
-  { label: 'Menu', href: '#menu' },
-  { label: 'Hours & Location', href: '#hours' },
+import Link from 'next/link';
+
+const quickLinks = [
   { label: 'Book a Table', href: '/book' },
+  { label: 'Our Story', href: '#story' },
+  { label: 'Menu', href: '#menu' },
+  { label: 'Gallery', href: '#gallery' },
+  { label: 'Contact', href: '#contact' },
 ];
 
-/* Social icons are placeholders — swap hrefs when accounts are live */
-const SOCIALS = [
-  { icon: Globe, href: '#', label: 'Website' },
-  { icon: Mail, href: '#', label: 'Email' },
-  { icon: Phone, href: '#', label: 'Phone' },
+const socials = [
+  { label: 'Instagram', href: 'https://instagram.com/skydeck.pune', icon: 'IG' },
+  { label: 'Facebook', href: 'https://facebook.com/skydeckpune', icon: 'FB' },
+  { label: 'Twitter', href: 'https://twitter.com/skydeckpune', icon: 'X' },
 ];
 
 export default function Footer() {
   return (
-    <footer className="border-t border-stone-200 dark:border-white/5 bg-[#F0EDE6] dark:bg-[#0a0a0e]">
-      <div className="mx-auto max-w-6xl px-5 py-16 sm:px-8">
-        <div className="grid gap-10 sm:grid-cols-3">
+    <footer className="border-t border-white/[0.04] bg-[#0E0D0B]">
+      <div className="mx-auto max-w-7xl px-5 sm:px-8 py-16">
+        <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-10 mb-12">
           {/* Brand */}
-          <div>
-            <Link href="/" className="font-serif text-2xl font-bold text-stone-900 dark:text-white">
-              Sky<span className="text-gold-600 dark:text-gold-400">Deck</span>
+          <div className="lg:col-span-2">
+            <Link href="/" className="inline-flex items-baseline gap-0.5 mb-4">
+              <span className="font-display text-2xl font-bold text-[#F4EFE8]">Sky</span>
+              <span className="font-display text-2xl font-bold text-[#D98E3F]">Deck</span>
             </Link>
-            <p className="mt-3 max-w-xs text-sm leading-relaxed text-stone-400 dark:text-white/30">
-              Rooftop dining above the Pimpri-Chinchwad skyline. Seasonal menus,
-              golden-hour views, live table booking.
+            <p className="text-sm text-[#6B6560] leading-relaxed max-w-sm mb-6">
+              Elevated dining above Pimpri-Chinchwad. Three curated zones, one unforgettable evening. Open nightly from 5 PM.
             </p>
-          </div>
-
-          {/* Quick Links */}
-          <div>
-            <h4 className="text-xs font-semibold uppercase tracking-wider text-stone-500 dark:text-white/50">
-              Quick Links
-            </h4>
-            <ul className="mt-4 space-y-2.5">
-              {QUICK_LINKS.map((link) => {
-                const isExternal = link.href.startsWith('#');
-                return (
-                  <li key={link.href}>
-                    {isExternal ? (
-                      <a
-                        href={link.href}
-                        className="text-sm text-stone-400 dark:text-white/40 transition-colors hover:text-stone-900 dark:hover:text-white"
-                      >
-                        {link.label}
-                      </a>
-                    ) : (
-                      <Link
-                        href={link.href}
-                        className="text-sm text-stone-400 dark:text-white/40 transition-colors hover:text-stone-900 dark:hover:text-white"
-                      >
-                        {link.label}
-                      </Link>
-                    )}
-                  </li>
-                );
-              })}
-            </ul>
-          </div>
-
-          {/* Social */}
-          <div>
-            <h4 className="text-xs font-semibold uppercase tracking-wider text-stone-500 dark:text-white/50">
-              Follow Us
-            </h4>
-            <div className="mt-4 flex gap-3">
-              {SOCIALS.map((social) => (
+            {/* Social icons */}
+            <div className="flex gap-3">
+              {socials.map((s) => (
                 <a
-                  key={social.label}
-                  href={social.href}
-                  aria-label={social.label}
-                  className="flex h-10 w-10 items-center justify-center rounded-full border border-stone-200 dark:border-white/10 text-stone-400 dark:text-white/40 transition-all hover:border-gold-300 dark:hover:border-gold-400/30 hover:bg-gold-50 dark:bg-gold-400/5 hover:text-gold-600 dark:hover:text-gold-400"
+                  key={s.label}
+                  href={s.href}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex h-10 w-10 items-center justify-center rounded-xl border border-white/[0.06] bg-white/[0.02] text-xs font-bold text-[#6B6560] hover:text-[#D98E3F] hover:border-[#D98E3F]/20 transition-all"
+                  aria-label={s.label}
                 >
-                  <social.icon size={18} />
+                  {s.icon}
                 </a>
               ))}
             </div>
           </div>
+
+          {/* Quick links */}
+          <div>
+            <h4 className="text-xs font-semibold tracking-[0.15em] uppercase text-[#6B6560] mb-4">Quick Links</h4>
+            <ul className="space-y-3">
+              {quickLinks.map((link) => (
+                <li key={link.label}>
+                  <Link
+                    href={link.href}
+                    className="text-sm text-[#A69E93] hover:text-[#D98E3F] transition-colors"
+                  >
+                    {link.label}
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          </div>
+
+          {/* Contact */}
+          <div>
+            <h4 className="text-xs font-semibold tracking-[0.15em] uppercase text-[#6B6560] mb-4">Get in Touch</h4>
+            <ul className="space-y-3 text-sm text-[#A69E93]">
+              <li>
+                <a href="tel:+919876543210" className="hover:text-[#D98E3F] transition-colors">
+                  +91 98765 43210
+                </a>
+              </li>
+              <li>
+                <a href="mailto:hello@skydeck.in" className="hover:text-[#D98E3F] transition-colors">
+                  hello@skydeck.in
+                </a>
+              </li>
+              <li className="text-[#6B6560] leading-relaxed">
+                4th Floor, Phoenix Mall,<br />
+                Pimpri-Chinchwad, Pune 411018
+              </li>
+            </ul>
+          </div>
         </div>
 
-        {/* Bottom bar */}
-        <div className="mt-12 border-t border-stone-200 dark:border-white/5 pt-6 text-center text-xs text-stone-300 dark:text-white/20">
-          <p>Rooftop Restaurant · Pimpri-Chinchwad, Pune</p>
-          <p className="mt-1">© {new Date().getFullYear()} SkyDeck. All rights reserved.</p>
+        {/* Bottom */}
+        <div className="border-t border-white/[0.04] pt-6 flex flex-col sm:flex-row items-center justify-between gap-3">
+          <p className="text-xs text-[#6B6560]">
+            © {new Date().getFullYear()} SkyDeck. All rights reserved.
+          </p>
+          <p className="text-xs text-[#6B6560]">
+            Crafted with care in Pune
+          </p>
         </div>
       </div>
     </footer>
