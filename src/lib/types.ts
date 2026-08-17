@@ -8,7 +8,7 @@ export type BookingStatus = 'pending' | 'confirmed' | 'cancelled' | 'expired';
 export interface Table {
   id: string;
   label: string;
-  zone: string;       // 'Rooftop' | 'Indoor AC' | 'Outdoor'
+  zone: string;       // 'Rooftop' | 'Indoor AC' | 'Outdoor' | 'Family Bar'
   capacity: number;
   status: TableStatus;
   updated_at: string;  // ISO-8601
@@ -28,10 +28,74 @@ export interface Booking {
   tables?: Table;
 }
 
-// ---- Constants ----
+// ---- Zone Definitions & Central Source of Truth ----
 
 export const ZONES = ['Rooftop', 'Indoor AC', 'Outdoor', 'Family Bar'] as const;
 export type Zone = (typeof ZONES)[number];
+
+export interface ZoneConfig {
+  name: Zone;
+  image: string;
+  bgImage: string;
+  seats: string;
+  bestFor: string;
+  description: string;
+  accent: string;
+  accentGlow: string;
+  accentBg: string;
+  accentBorder: string;
+}
+
+export const ZONE_DETAILS: ZoneConfig[] = [
+  {
+    name: 'Rooftop',
+    image: '/images/zone-rooftop.jpg',
+    bgImage: '/images/hero-bg.jpg',
+    seats: '2–8',
+    bestFor: 'Date night, skyline views',
+    description: 'Open-air tables beneath string lights with panoramic views of the Pune skyline.',
+    accent: '#D98E3F',
+    accentGlow: 'rgba(217, 142, 63, 0.45)',
+    accentBg: 'rgba(217, 142, 63, 0.12)',
+    accentBorder: 'rgba(217, 142, 63, 0.35)',
+  },
+  {
+    name: 'Indoor AC',
+    image: '/images/zone-indoor.jpg',
+    bgImage: '/images/zone-indoor.jpg',
+    seats: '2–12',
+    bestFor: 'Family, celebrations',
+    description: 'Climate-controlled elegance with warm wood and copper accents throughout.',
+    accent: '#60A5FA',
+    accentGlow: 'rgba(96, 165, 250, 0.45)',
+    accentBg: 'rgba(96, 165, 250, 0.12)',
+    accentBorder: 'rgba(96, 165, 250, 0.35)',
+  },
+  {
+    name: 'Outdoor',
+    image: '/images/zone-outdoor.jpg',
+    bgImage: '/images/zone-outdoor.jpg',
+    seats: '2–6',
+    bestFor: 'Casual, group drinks',
+    description: 'Garden-side seating surrounded by greenery — perfect for relaxed evenings.',
+    accent: '#4ADE80',
+    accentGlow: 'rgba(74, 222, 128, 0.45)',
+    accentBg: 'rgba(74, 222, 128, 0.12)',
+    accentBorder: 'rgba(74, 222, 128, 0.35)',
+  },
+  {
+    name: 'Family Bar',
+    image: '/images/zone-familybar.jpg',
+    bgImage: '/images/zone-familybar.jpg',
+    seats: '2–10',
+    bestFor: 'Families, live buzz',
+    description: 'Bar-height and lounge seating with a kid-friendly menu — lively, relaxed, and family-first.',
+    accent: '#FB7185',
+    accentGlow: 'rgba(251, 113, 133, 0.45)',
+    accentBg: 'rgba(251, 113, 133, 0.12)',
+    accentBorder: 'rgba(251, 113, 133, 0.35)',
+  },
+];
 
 /** Pending bookings auto-expire after this many minutes. */
 export const EXPIRY_MINUTES = 10;

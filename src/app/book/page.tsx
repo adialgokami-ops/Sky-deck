@@ -3,15 +3,16 @@
 import { useState, useMemo, useCallback, useEffect } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
-import { Minus, Plus, Check, MapPin, Calendar, CalendarClock, Clock, Users, PartyPopper, Sparkles, CheckCircle2, X } from 'lucide-react';
+import { Minus, Plus, Check, MapPin, Calendar, CalendarClock, Clock, Users, PartyPopper, Sparkles } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { useRealtimeTables } from '@/hooks/useRealtimeTables';
 import { useAutoExpiry } from '@/hooks/useAutoExpiry';
 import type { Table } from '@/lib/types';
-import { ZONES as ZONE_NAMES } from '@/lib/types';
+import { ZONES as ZONE_NAMES, ZONE_DETAILS, type Zone } from '@/lib/types';
 import TableCard from '@/components/TableCard';
 import BookingModal, { type ActiveBookingSession } from '@/components/BookingModal';
-import type { Zone } from '@/lib/types';
+import ConfirmedModal from '@/components/ConfirmedModal';
+
 type Step = 1 | 2 | 3;
 type BookingState = 'idle' | 'submitting' | 'success' | 'error';
 
@@ -28,65 +29,6 @@ interface BookingData {
   email: string;
   confirmMethod: 'whatsapp' | 'sms' | 'email';
 }
-
-// ── Constants: Dynamic Zone Backgrounds & Glassmorphic Palette ───
-
-const ZONES: {
-  name: Zone;
-  image: string;
-  bgImage: string;
-  seats: string;
-  bestFor: string;
-  accent: string;
-  accentGlow: string;
-  accentBg: string;
-  accentBorder: string;
-}[] = [
-  {
-    name: 'Rooftop',
-    image: '/images/zone-rooftop.jpg',
-    bgImage: '/images/hero-bg.jpg',
-    seats: '2–8',
-    bestFor: 'Date night, skyline views',
-    accent: '#D98E3F',
-    accentGlow: 'rgba(217, 142, 63, 0.45)',
-    accentBg: 'rgba(217, 142, 63, 0.12)',
-    accentBorder: 'rgba(217, 142, 63, 0.35)',
-  },
-  {
-    name: 'Indoor AC',
-    image: '/images/zone-indoor.jpg',
-    bgImage: '/images/zone-indoor.jpg',
-    seats: '2–12',
-    bestFor: 'Family, celebrations',
-    accent: '#60A5FA',
-    accentGlow: 'rgba(96, 165, 250, 0.45)',
-    accentBg: 'rgba(96, 165, 250, 0.12)',
-    accentBorder: 'rgba(96, 165, 250, 0.35)',
-  },
-  {
-    name: 'Outdoor',
-    image: '/images/zone-outdoor.jpg',
-    bgImage: '/images/zone-outdoor.jpg',
-    seats: '2–6',
-    bestFor: 'Casual, group drinks',
-    accent: '#4ADE80',
-    accentGlow: 'rgba(74, 222, 128, 0.45)',
-    accentBg: 'rgba(74, 222, 128, 0.12)',
-    accentBorder: 'rgba(74, 222, 128, 0.35)',
-  },
-  {
-    name: 'Family Bar',
-    image: '/images/zone-familybar.jpg',
-    bgImage: '/images/zone-familybar.jpg',
-    seats: '2–10',
-    bestFor: 'Families, live buzz',
-    accent: '#FB7185',
-    accentGlow: 'rgba(251, 113, 133, 0.45)',
-    accentBg: 'rgba(251, 113, 133, 0.12)',
-    accentBorder: 'rgba(251, 113, 133, 0.35)',
-  },
-];
 
 const TIME_SLOTS = [
   '5:00 PM', '5:30 PM', '6:00 PM', '6:30 PM', '7:00 PM', '7:30 PM',
@@ -109,7 +51,7 @@ export default function BookingPage() {
   const [mode, setMode] = useState<'now' | 'later'>('now');
 
   // ── Book Now state ──
-  const [activeZone, setActiveZone] = useState<'Rooftop' | 'Indoor AC' | 'Outdoor' | 'Family Bar'>('Rooftop');
+  const [activeZone, setActiveZone] = useState<Zone>('Rooftop');
   const [selectedTable, setSelectedTable] = useState<Table | null>(null);
 
   // ── Page-Level Active Booking Session Tracking ──
@@ -157,15 +99,6 @@ export default function BookingPage() {
       setActiveBookingSession((prev) => (prev ? { ...prev, status: 'confirmed' } : null));
       setSelectedTable(null); // Dismiss any open pending form
       setShowConfirmedPopup(true); // Open the distinct confirmed popup
-
-      // Fire native browser push notification
-      if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
-        new Notification('SkyDeck — Table Confirmed! 🎉', {
-          body: `Your ${activeBookingSession.table.zone} table (${activeBookingSession.table.label}) is confirmed. See you at SkyDeck!`,
-          icon: '/images/skydeck-icon.png',
-          tag: `skydeck-confirmed-${activeBookingSession.bookingRef}`,
-        });
-      }
     };
 
     const handleStatusChange = (newStatus: string) => {
@@ -247,12 +180,12 @@ export default function BookingPage() {
 
   // Active zone for dynamic background crossfade
   const currentZone = mode === 'now' ? activeZone : (data.zone || activeZone);
-  const currentZoneData = ZONES.find((z) => z.name === currentZone) || ZONES[0];
+  const currentZoneData = ZONE_DETAILS.find((z) => z.name === currentZone) || ZONE_DETAILS[0];
 
   // ── Live availability counts per zone ──
   const zoneAvailability = useMemo(() => {
     const map: Record<string, { available: number; total: number }> = {};
-    for (const z of ZONES) {
+    for (const z of ZONE_DETAILS) {
       map[z.name] = { available: 0, total: 0 };
     }
     for (const t of tables) {
@@ -350,14 +283,14 @@ export default function BookingPage() {
 
   return (
     <div className="min-h-screen text-[#F4EFE8] relative selection:bg-[#D98E3F]/30 selection:text-white">
-      {/* ── Fixed Full-bleed Dynamic Zone Backgrounds with 500ms Crossfade ── */}
-      <div className="fixed inset-0 -z-20 overflow-hidden pointer-events-none">
-        {ZONES.map((zone) => {
+      {/* ── Fixed Full-bleed Dynamic Zone Backgrounds with GPU-Accelerated 500ms Crossfade ── */}
+      <div className="fixed inset-0 -z-20 overflow-hidden pointer-events-none transform-gpu">
+        {ZONE_DETAILS.map((zone) => {
           const isVisible = currentZone === zone.name;
           return (
             <div
               key={zone.name}
-              className={`absolute inset-0 transition-opacity duration-500 ease-in-out ${
+              className={`absolute inset-0 transition-opacity duration-500 ease-in-out transform-gpu will-change-[opacity] ${
                 isVisible ? 'opacity-100 z-10' : 'opacity-0 z-0 pointer-events-none'
               }`}
             >
@@ -365,7 +298,7 @@ export default function BookingPage() {
                 src={zone.bgImage}
                 alt={`SkyDeck ${zone.name} Ambiance`}
                 fill
-                priority
+                priority={isVisible}
                 sizes="100vw"
                 className="object-cover object-center scale-105 filter brightness-[0.72] contrast-[1.05]"
               />
@@ -374,16 +307,16 @@ export default function BookingPage() {
         })}
       </div>
 
-      {/* Cinematic dark frosted gradient overlay */}
-      <div className="fixed inset-0 -z-10 bg-gradient-to-b from-[#0c0a09]/55 via-[#12100E]/75 to-[#0b0908]/92 backdrop-blur-[2px] pointer-events-none" />
+      {/* Cinematic dark frosted gradient overlay (optimized without full-viewport blur filter) */}
+      <div className="fixed inset-0 -z-10 bg-gradient-to-b from-[#0c0a09]/60 via-[#12100E]/78 to-[#0b0908]/94 pointer-events-none" />
 
       {/* Dynamic ambient glass light refractions that match current zone */}
       <div
-        className="pointer-events-none fixed top-0 left-1/4 w-[500px] h-[300px] blur-[140px] rounded-full -z-10 transition-colors duration-700"
+        className="pointer-events-none fixed top-0 left-1/4 w-[500px] h-[300px] blur-[140px] rounded-full -z-10 transition-colors duration-700 transform-gpu"
         style={{ backgroundColor: currentZoneData.accentGlow }}
       />
       <div
-        className="pointer-events-none fixed top-1/3 right-10 w-[400px] h-[350px] blur-[140px] rounded-full -z-10 transition-colors duration-700"
+        className="pointer-events-none fixed top-1/3 right-10 w-[400px] h-[350px] blur-[140px] rounded-full -z-10 transition-colors duration-700 transform-gpu"
         style={{ backgroundColor: currentZoneData.accentBg }}
       />
 
@@ -436,12 +369,12 @@ export default function BookingPage() {
             {ZONE_NAMES.map((zone) => {
               const avail = zoneAvailability[zone] || { available: 0, total: 0 };
               const isActive = activeZone === zone;
-              const zoneData = ZONES.find((z) => z.name === zone);
+              const zoneData = ZONE_DETAILS.find((z) => z.name === zone);
               return (
                 <button
                   key={zone}
-                  onClick={() => setActiveZone(zone as typeof activeZone)}
-                  className={`relative rounded-2xl p-3.5 text-left transition-all duration-300 border backdrop-blur-xl overflow-hidden shadow-lg shadow-black/25 ${
+                  onClick={() => setActiveZone(zone as Zone)}
+                  className={`relative rounded-2xl p-3.5 text-left transition-all duration-300 border backdrop-blur-xl overflow-hidden shadow-lg shadow-black/25 transform-gpu ${
                     isActive
                       ? 'border-white/40 ring-1 ring-white/30 scale-[1.02]'
                       : 'border-white/[0.12] bg-white/[0.06] hover:bg-white/[0.1] hover:border-white/[0.25]'
@@ -617,7 +550,7 @@ export default function BookingPage() {
 
       {/* ── Page-Level Confirmed Popup (Appears regardless of whether pending modal was closed) ── */}
       {showConfirmedPopup && activeBookingSession && (
-        <ConfirmedTableModal
+        <ConfirmedModal
           session={activeBookingSession}
           onClose={() => setShowConfirmedPopup(false)}
         />
@@ -677,7 +610,7 @@ function StepDateTimeZone({
               <button
                 key={d.toISOString()}
                 onClick={() => update('date', d)}
-                className={`shrink-0 rounded-2xl border px-4 py-3 text-center transition-all duration-200 min-w-[72px] backdrop-blur-xl shadow-lg shadow-black/20 ${
+                className={`shrink-0 rounded-2xl border px-4 py-3 text-center transition-all duration-200 min-w-[72px] backdrop-blur-xl shadow-lg shadow-black/20 transform-gpu ${
                   isSelected
                     ? 'bg-[#D98E3F] border-[#E8A855] text-[#12100E] shadow-amber-500/40 scale-[1.04]'
                     : 'border-white/[0.14] bg-white/[0.07] hover:bg-white/[0.14] hover:border-white/[0.25] text-white'
@@ -723,7 +656,7 @@ function StepDateTimeZone({
                   key={slot}
                   onClick={() => !soldOut && update('timeSlot', slot)}
                   disabled={soldOut}
-                  className={`rounded-xl border py-3 px-2 text-center transition-all duration-200 backdrop-blur-xl shadow-md ${
+                  className={`rounded-xl border py-3 px-2 text-center transition-all duration-200 backdrop-blur-xl shadow-md transform-gpu ${
                     isSelected
                       ? 'bg-[#D98E3F] border-[#E8A855] text-[#12100E] shadow-amber-500/30'
                       : soldOut
@@ -790,7 +723,7 @@ function StepDateTimeZone({
           </div>
         ) : (
           <div className="grid gap-3">
-            {ZONES.map((zone) => {
+            {ZONE_DETAILS.map((zone) => {
               const avail = zoneAvailability[zone.name] || { available: 0, total: 0 };
               const isSelected = data.zone === zone.name;
               const fullyBooked = avail.available === 0;
@@ -799,7 +732,7 @@ function StepDateTimeZone({
                   key={zone.name}
                   onClick={() => !fullyBooked && update('zone', zone.name)}
                   disabled={fullyBooked}
-                  className={`relative rounded-2xl border p-4 text-left transition-all duration-300 overflow-hidden backdrop-blur-xl shadow-xl shadow-black/30 ${
+                  className={`relative rounded-2xl border p-4 text-left transition-all duration-300 overflow-hidden backdrop-blur-xl shadow-xl shadow-black/30 transform-gpu ${
                     isSelected
                       ? 'scale-[1.01] ring-1 ring-white/40'
                       : fullyBooked
@@ -815,7 +748,13 @@ function StepDateTimeZone({
                   <div className="flex items-center gap-4">
                     {/* Thumbnail */}
                     <div className="relative h-16 w-20 rounded-xl overflow-hidden shrink-0 border border-white/[0.2] shadow-md">
-                      <Image src={zone.image} alt={zone.name} fill className="object-cover" />
+                      <Image
+                        src={zone.image}
+                        alt={zone.name}
+                        fill
+                        sizes="80px"
+                        className="object-cover"
+                      />
                     </div>
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 mb-1">
@@ -887,7 +826,7 @@ function StepOccasion({
               <button
                 key={occ}
                 onClick={() => update('occasion', isSelected ? null : occ)}
-                className={`rounded-full px-5 py-2.5 text-sm font-semibold border backdrop-blur-xl transition-all duration-200 shadow-md ${
+                className={`rounded-full px-5 py-2.5 text-sm font-semibold border backdrop-blur-xl transition-all duration-200 shadow-md transform-gpu ${
                   isSelected
                     ? 'bg-[#D98E3F] border-[#E8A855] text-[#12100E] shadow-amber-500/30 scale-[1.02]'
                     : 'border-white/[0.15] bg-white/[0.07] text-white/80 hover:bg-white/[0.14] hover:text-white'
@@ -916,7 +855,7 @@ function StepOccasion({
                     update('dietaryNotes', data.dietaryNotes ? `${data.dietaryNotes}, ${tag}` : tag);
                   }
                 }}
-                className={`rounded-full px-4 py-2 text-xs font-semibold border backdrop-blur-xl transition-all duration-200 shadow-sm ${
+                className={`rounded-full px-4 py-2 text-xs font-semibold border backdrop-blur-xl transition-all duration-200 shadow-sm transform-gpu ${
                   isSelected
                     ? 'bg-emerald-500/25 border-emerald-400/50 text-emerald-300'
                     : 'border-white/[0.12] bg-white/[0.06] text-white/70 hover:bg-white/[0.12] hover:text-white'
@@ -961,7 +900,7 @@ function StepConfirm({
   submitting: boolean;
 }) {
   const isPhoneValid = data.phone.length === 0 || /^\d{10}$/.test(data.phone);
-  const zone = ZONES.find((z) => z.name === data.zone);
+  const zone = ZONE_DETAILS.find((z) => z.name === data.zone);
 
   return (
     <div className="space-y-8 pt-6 animate-fadeIn">
@@ -1057,7 +996,7 @@ function StepConfirm({
               <button
                 key={method}
                 onClick={() => update('confirmMethod', method)}
-                className={`flex-1 rounded-xl border py-3 text-sm font-semibold backdrop-blur-xl transition-all shadow-md ${
+                className={`flex-1 rounded-xl border py-3 text-sm font-semibold backdrop-blur-xl transition-all shadow-md transform-gpu ${
                   isSelected
                     ? 'bg-[#D98E3F]/25 border-amber-400 text-amber-300 shadow-amber-500/25 scale-[1.02]'
                     : 'border-white/[0.14] bg-white/[0.06] text-white/70 hover:bg-white/[0.12] hover:text-white'
@@ -1079,117 +1018,15 @@ function StepConfirm({
   );
 }
 
-// ── Distinct Confirmed Modal in Frosted Glass (Page-Level) ────────
-
-function ConfirmedTableModal({
-  session,
-  onClose,
-}: {
-  session: ActiveBookingSession;
-  onClose: () => void;
-}) {
-  const zone = ZONES.find((z) => z.name === session.table.zone);
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-5 animate-fadeIn">
-      {/* Backdrop */}
-      <div className="absolute inset-0 bg-black/80 backdrop-blur-md" onClick={onClose} />
-
-      {/* Frosted Glass Modal Panel */}
-      <div className="relative z-10 w-full max-w-md rounded-3xl border border-white/[0.22] bg-[#161311]/92 backdrop-blur-2xl p-7 sm:p-8 shadow-[0_30px_70px_rgba(0,0,0,0.85)] text-center text-[#F4EFE8] animate-slide-up">
-        {/* Close Button */}
-        <button
-          onClick={onClose}
-          className="absolute top-4 right-4 text-white/50 hover:text-white p-2 text-xl transition-colors"
-        >
-          <X size={20} />
-        </button>
-
-        {/* Luminous Celebration Glow */}
-        <div className="mb-5 relative mx-auto w-fit">
-          <div className="absolute inset-0 rounded-full bg-emerald-400/25 blur-xl scale-125 pointer-events-none" />
-          <div className="relative rounded-full bg-emerald-500/20 border-2 border-emerald-400/40 p-4 shadow-lg shadow-emerald-500/30 backdrop-blur-xl">
-            <CheckCircle2 size={52} className="text-emerald-400" strokeWidth={2} />
-          </div>
-        </div>
-
-        <h2 className="font-display text-3xl font-bold text-white mb-1.5 drop-shadow-md">
-          You&apos;re All Set! 🎉
-        </h2>
-        <p className="text-sm text-emerald-300 font-bold mb-1">Table Confirmed by Staff</p>
-        <p className="text-xs text-white/50 font-medium mb-6">
-          Ref: <span className="font-mono text-[#D98E3F] font-bold">#{session.bookingRef}</span>
-        </p>
-
-        {/* Confirmed Details Card in Frosted Glass */}
-        <div className="w-full rounded-2xl border border-white/[0.16] bg-white/[0.07] backdrop-blur-xl px-5 py-4 mb-6 text-left shadow-lg">
-          <div className="grid grid-cols-2 gap-3.5 text-sm">
-            <div>
-              <p className="text-[10px] uppercase font-bold tracking-wider text-white/45 mb-0.5">Table</p>
-              <p className="font-bold text-white text-base">{session.table.label}</p>
-            </div>
-            <div>
-              <p className="text-[10px] uppercase font-bold tracking-wider text-white/45 mb-0.5">Zone</p>
-              <p className="font-bold text-base" style={{ color: zone?.accent || '#FBBF24' }}>{session.table.zone}</p>
-            </div>
-            <div>
-              <p className="text-[10px] uppercase font-bold tracking-wider text-white/45 mb-0.5">Guests</p>
-              <p className="font-bold text-white">{session.partySize} guests</p>
-            </div>
-            <div>
-              <p className="text-[10px] uppercase font-bold tracking-wider text-white/45 mb-0.5">Status</p>
-              <p className="font-bold text-emerald-300 flex items-center gap-1">
-                <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                Confirmed
-              </p>
-            </div>
-          </div>
-        </div>
-
-        {/* Direction hint */}
-        <p className="text-sm text-white/70 flex items-center justify-center gap-1.5 mb-6">
-          <MapPin size={15} className="text-emerald-400 shrink-0" />
-          Please head to the <strong className="text-white">{session.table.zone}</strong> host stand
-        </p>
-
-        <button
-          onClick={onClose}
-          className="w-full rounded-xl bg-emerald-600 px-6 py-3.5 font-bold text-white shadow-lg shadow-emerald-600/30 transition-all hover:bg-emerald-500 active:scale-[0.98]"
-        >
-          Let&apos;s Go! 🎉
-        </button>
-      </div>
-    </div>
-  );
-}
-
 // ── Success Screen in Glassmorphism ───────────────────────────────
 
 function SuccessScreen({ data, bookingRef, bookingId }: { data: BookingData; bookingRef: string; bookingId: string }) {
-  const zone = ZONES.find((z) => z.name === data.zone);
+  const zone = ZONE_DETAILS.find((z) => z.name === data.zone);
   const [confirmed, setConfirmed] = useState(false);
 
-  // Request browser notification permission as soon as the success screen mounts
-  useEffect(() => {
-    if (typeof Notification !== 'undefined' && Notification.permission === 'default') {
-      Notification.requestPermission();
-    }
-  }, []);
-
-  // Poll for admin confirmation every 5 seconds + fire browser notification
+  // Poll / listen for admin confirmation
   useEffect(() => {
     if (!bookingId || confirmed) return;
-
-    const fireNotification = () => {
-      if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
-        new Notification('SkyDeck — Booking Confirmed! 🎉', {
-          body: `Your ${data.zone} table for ${data.partySize} is confirmed. See you tonight!`,
-          icon: '/images/skydeck-icon.png',
-          badge: '/images/skydeck-icon.png',
-          tag: `skydeck-${bookingRef}`,
-        });
-      }
-    };
 
     // Realtime subscription
     const channel = supabase
@@ -1198,7 +1035,6 @@ function SuccessScreen({ data, bookingRef, bookingId }: { data: BookingData; boo
         const updated = payload.new as { id: string; status: string };
         if (updated.id === bookingId && updated.status === 'confirmed') {
           setConfirmed(true);
-          fireNotification();
         }
       })
       .subscribe();
@@ -1208,12 +1044,11 @@ function SuccessScreen({ data, bookingRef, bookingId }: { data: BookingData; boo
       const { data: row } = await supabase.from('bookings').select('status').eq('id', bookingId).single();
       if (row?.status === 'confirmed') {
         setConfirmed(true);
-        fireNotification();
       }
     }, 5000);
 
     return () => { supabase.removeChannel(channel); clearInterval(poll); };
-  }, [bookingId, confirmed, data.zone, data.partySize, bookingRef]);
+  }, [bookingId, confirmed]);
 
   // Build calendar link
   const calendarUrl = useMemo(() => {
@@ -1234,10 +1069,11 @@ function SuccessScreen({ data, bookingRef, bookingId }: { data: BookingData; boo
           alt="SkyDeck Background"
           fill
           priority
+          sizes="100vw"
           className="object-cover object-center filter brightness-[0.65]"
         />
       </div>
-      <div className="fixed inset-0 -z-10 bg-black/65 backdrop-blur-[4px] pointer-events-none" />
+      <div className="fixed inset-0 -z-10 bg-black/65 pointer-events-none" />
 
       <div className="w-full max-w-md text-center animate-fadeIn relative z-10">
         {/* Celebration icon */}
@@ -1265,7 +1101,7 @@ function SuccessScreen({ data, bookingRef, bookingId }: { data: BookingData; boo
             <div className="grid grid-cols-2 gap-4 text-sm">
               <div>
                 <span className="text-white/50 text-xs block font-medium mb-0.5">Date</span>
-                <span className="text-white font-bold">{data.date?.toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })}</span>
+                <span className="text-white font-bold">{data.date?.toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short' })}</span>
               </div>
               <div>
                 <span className="text-white/50 text-xs block font-medium mb-0.5">Time</span>
@@ -1326,16 +1162,6 @@ function SuccessScreen({ data, bookingRef, bookingId }: { data: BookingData; boo
           ☀️ <strong className="text-white">Rooftop tip:</strong> Evenings can get breezy — we recommend a light layer. Smart casual dress code.
         </p>
       </div>
-
-      {/* Confirmation overlay */}
-      {confirmed && (
-        <ConfirmationOverlay
-          data={data}
-          bookingRef={bookingRef}
-          calendarUrl={calendarUrl}
-          onDismiss={() => setConfirmed(false)}
-        />
-      )}
     </div>
   );
 }
@@ -1345,7 +1171,7 @@ function SuccessScreen({ data, bookingRef, bookingId }: { data: BookingData; boo
 function ErrorScreen({ message, onRetry }: { message: string; onRetry: () => void }) {
   return (
     <div className="min-h-screen relative flex items-center justify-center p-5 text-[#F4EFE8]">
-      <div className="fixed inset-0 -z-10 bg-black/80 backdrop-blur-md pointer-events-none" />
+      <div className="fixed inset-0 -z-10 bg-black/80 pointer-events-none" />
       <div className="w-full max-w-sm text-center rounded-3xl border border-white/[0.16] bg-white/[0.08] backdrop-blur-2xl p-8 shadow-2xl animate-fadeIn">
         <div className="mx-auto mb-6 flex h-16 w-16 items-center justify-center rounded-full bg-red-500/20 border border-red-500/40">
           <span className="text-3xl">😔</span>
@@ -1362,121 +1188,6 @@ function ErrorScreen({ message, onRetry }: { message: string; onRetry: () => voi
 
         <p className="text-xs text-white/50">
           Or call us directly: <a href="tel:+919876543210" className="text-amber-300 font-bold hover:underline">+91 98765 43210</a>
-        </p>
-      </div>
-    </div>
-  );
-}
-
-// ── Confirmation Overlay in Frosted Glass (Book for Later) ────────
-
-function ConfirmationOverlay({
-  data,
-  bookingRef,
-  calendarUrl,
-  onDismiss,
-}: {
-  data: BookingData;
-  bookingRef: string;
-  calendarUrl: string;
-  onDismiss: () => void;
-}) {
-  const zone = ZONES.find((z) => z.name === data.zone);
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-5">
-      {/* Backdrop */}
-      <div className="absolute inset-0 bg-black/75 backdrop-blur-md" onClick={onDismiss} />
-
-      {/* Glass Modal */}
-      <div className="relative z-10 w-full max-w-md rounded-3xl border border-white/[0.2] bg-[#161311]/90 backdrop-blur-2xl p-8 shadow-[0_25px_60px_rgba(0,0,0,0.8)] animate-slide-up text-center text-[#F4EFE8]">
-        {/* Ambient warm glow */}
-        <div className="absolute -top-20 left-1/2 -translate-x-1/2 h-40 w-80 bg-amber-500/20 blur-[80px] rounded-full pointer-events-none" />
-
-        {/* Close */}
-        <button
-          onClick={onDismiss}
-          className="absolute top-4 right-4 text-white/50 hover:text-white text-2xl transition-colors"
-        >
-          ×
-        </button>
-
-        {/* Celebration icon */}
-        <div className="mx-auto mb-5 flex h-20 w-20 items-center justify-center rounded-full bg-emerald-500/20 border-2 border-emerald-400/40 shadow-lg shadow-emerald-500/30">
-          <Check size={40} className="text-emerald-400" strokeWidth={2.5} />
-        </div>
-
-        <h2 className="font-display text-3xl font-bold text-white mb-2 drop-shadow-md">
-          You&apos;re confirmed! 🎉
-        </h2>
-        <p className="text-sm text-white/70 font-medium mb-6">
-          The SkyDeck team has confirmed your reservation. We can&apos;t wait to welcome you!
-        </p>
-
-        {/* Confirmed details card */}
-        <div className="rounded-2xl border border-white/[0.14] bg-white/[0.06] p-4 mb-6 text-left backdrop-blur-xl">
-          <div className="grid grid-cols-2 gap-3.5 text-sm">
-            <div>
-              <span className="text-white/50 text-xs block font-medium">Zone</span>
-              <span className="font-bold" style={{ color: zone?.accent }}>{data.zone}</span>
-            </div>
-            <div>
-              <span className="text-white/50 text-xs block font-medium">Guests</span>
-              <span className="text-white font-bold">{data.partySize}</span>
-            </div>
-            {data.date && (
-              <div>
-                <span className="text-white/50 text-xs block font-medium">Date</span>
-                <span className="text-white font-bold text-xs">
-                  {data.date.toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short' })}
-                </span>
-              </div>
-            )}
-            {data.timeSlot && (
-              <div>
-                <span className="text-white/50 text-xs block font-medium">Time</span>
-                <span className="text-white font-bold text-xs">{data.timeSlot}</span>
-              </div>
-            )}
-          </div>
-          <div className="mt-3.5 pt-3 border-t border-white/[0.1] flex items-center justify-between">
-            <span className="text-xs text-white/60 font-medium">Ref: <span className="font-mono font-bold text-[#D98E3F]">#{bookingRef}</span></span>
-            <span className="text-xs font-bold text-emerald-300 bg-emerald-500/20 border border-emerald-400/40 rounded-full px-2.5 py-0.5 flex items-center gap-1">
-              <Check size={12} strokeWidth={2.5} /> Confirmed
-            </span>
-          </div>
-        </div>
-
-        {/* Actions */}
-        <div className="space-y-2.5">
-          <a
-            href={calendarUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="flex items-center justify-center gap-2 w-full rounded-xl border border-white/[0.16] bg-white/[0.08] hover:bg-white/[0.15] py-3.5 text-sm font-bold text-white backdrop-blur-xl shadow-md transition-all"
-          >
-            <Calendar size={15} className="text-[#D98E3F]" />
-            Add to Calendar
-          </a>
-          <a
-            href="https://maps.google.com/?q=SkyDeck+Pimpri+Chinchwad+Pune"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="flex items-center justify-center gap-2 w-full rounded-xl border border-white/[0.16] bg-white/[0.08] hover:bg-white/[0.15] py-3.5 text-sm font-bold text-white backdrop-blur-xl shadow-md transition-all"
-          >
-            <MapPin size={15} className="text-[#D98E3F]" />
-            Get Directions
-          </a>
-          <button
-            onClick={onDismiss}
-            className="w-full rounded-xl bg-gradient-to-r from-[#D98E3F] to-[#E8A855] py-3.5 text-sm font-bold text-[#12100E] hover:from-[#E8A855] hover:to-[#F3B765] shadow-lg shadow-amber-500/30 transition-all"
-          >
-            Got It
-          </button>
-        </div>
-
-        <p className="mt-5 text-xs text-white/50">
-          Smart casual dress code · Rooftop can be breezy
         </p>
       </div>
     </div>

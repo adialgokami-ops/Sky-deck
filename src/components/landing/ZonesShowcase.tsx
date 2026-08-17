@@ -3,49 +3,7 @@
 import Image from 'next/image';
 import Link from 'next/link';
 import { useScrollReveal } from '@/hooks/useScrollReveal';
-
-const zones = [
-  {
-    name: 'Rooftop',
-    image: '/images/zone-rooftop.jpg',
-    seats: '2–8',
-    bestFor: 'Date night, skyline views',
-    accent: '#D98E3F',
-    accentBg: 'rgba(217,142,63,0.08)',
-    accentBorder: 'rgba(217,142,63,0.15)',
-    description: 'Open-air tables beneath string lights with panoramic views of the Pune skyline.',
-  },
-  {
-    name: 'Indoor AC',
-    image: '/images/zone-indoor.jpg',
-    seats: '2–12',
-    bestFor: 'Family gatherings, celebrations',
-    accent: '#5B7A9D',
-    accentBg: 'rgba(91,122,157,0.08)',
-    accentBorder: 'rgba(91,122,157,0.15)',
-    description: 'Climate-controlled elegance with warm wood and copper accents throughout.',
-  },
-  {
-    name: 'Outdoor',
-    image: '/images/zone-outdoor.jpg',
-    seats: '2–6',
-    bestFor: 'Casual evenings, group drinks',
-    accent: '#7A9B6B',
-    accentBg: 'rgba(122,155,107,0.08)',
-    accentBorder: 'rgba(122,155,107,0.15)',
-    description: 'Garden-side seating surrounded by greenery — perfect for relaxed evenings.',
-  },
-  {
-    name: 'Family Bar',
-    image: '/images/zone-familybar.jpg',
-    seats: '2–10',
-    bestFor: 'Families, casual groups, live buzz',
-    accent: '#C8694A',
-    accentBg: 'rgba(200,105,74,0.08)',
-    accentBorder: 'rgba(200,105,74,0.15)',
-    description: 'Bar-height and lounge seating with a kid-friendly menu — lively, relaxed, and family-first.',
-  },
-];
+import { ZONE_DETAILS } from '@/lib/types';
 
 export default function ZonesShowcase() {
   const revealRef = useScrollReveal();
@@ -65,10 +23,10 @@ export default function ZonesShowcase() {
 
         {/* 2×2 on mobile, 4-across on desktop */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 sm:gap-5">
-          {zones.map((zone) => (
+          {ZONE_DETAILS.map((zone) => (
             <div
               key={zone.name}
-              className="group rounded-3xl overflow-hidden border transition-all duration-500 hover:scale-[1.02]"
+              className="group rounded-3xl overflow-hidden border transition-all duration-500 hover:scale-[1.02] transform-gpu"
               style={{
                 borderColor: zone.accentBorder,
                 backgroundColor: zone.accentBg,
@@ -80,6 +38,7 @@ export default function ZonesShowcase() {
                   src={zone.image}
                   alt={`${zone.name} zone`}
                   fill
+                  sizes="(max-width: 768px) 50vw, 25vw"
                   className="object-cover transition-transform duration-700 group-hover:scale-105"
                 />
                 <div className="absolute inset-0 bg-gradient-to-t from-[#12100E]/80 to-transparent" />

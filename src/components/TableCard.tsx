@@ -22,7 +22,7 @@ export default function TableCard({ table, onClick, adminMode }: TableCardProps)
       disabled={!isClickable}
       className={`
         group relative w-full rounded-2xl border p-4 text-left
-        transition-all duration-300 ease-out
+        transition-all duration-300 ease-out transform-gpu
         backdrop-blur-xl shadow-lg shadow-black/20
         ${
           table.status === 'available'

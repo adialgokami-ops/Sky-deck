@@ -27,6 +27,7 @@ export default function Story() {
                   src="/images/chef.jpg"
                   alt="Chef Arjun Mehta"
                   fill
+                  sizes="64px"
                   className="object-cover"
                 />
               </div>
@@ -46,6 +47,7 @@ export default function Story() {
                 src="/images/story.jpg"
                 alt="SkyDeck restaurant ambience"
                 fill
+                sizes="(max-width: 1024px) 100vw, 50vw"
                 className="object-cover"
               />
               <div className="absolute inset-0 bg-gradient-to-t from-[#12100E]/40 to-transparent" />

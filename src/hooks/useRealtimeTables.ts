@@ -4,13 +4,16 @@ import { useEffect, useState, useCallback } from 'react';
 import { supabase } from '@/lib/supabase';
 import type { Table } from '@/lib/types';
 
+// In-memory module cache for instant rendering across mounts & tab switches
+let memoryTableCache: Table[] | null = null;
+
 /**
- * Subscribe to the `tables` table via Supabase Realtime.
+ * Subscribe to the `tables` table via Supabase Realtime with instant in-memory caching.
  * Returns the live list of tables, grouped by zone.
  */
 export function useRealtimeTables() {
-  const [tables, setTables] = useState<Table[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [tables, setTables] = useState<Table[]>(() => memoryTableCache || []);
+  const [loading, setLoading] = useState<boolean>(() => !memoryTableCache);
 
   const fetchTables = useCallback(async () => {
     const { data, error } = await supabase
@@ -22,7 +25,9 @@ export function useRealtimeTables() {
       console.error('Error fetching tables:', error);
       return;
     }
-    setTables(data as Table[]);
+    const fresh = (data as Table[]) || [];
+    memoryTableCache = fresh;
+    setTables(fresh);
     setLoading(false);
   }, []);
 
@@ -36,18 +41,20 @@ export function useRealtimeTables() {
         { event: '*', schema: 'public', table: 'tables' },
         (payload) => {
           setTables((prev) => {
+            let next: Table[];
             if (payload.eventType === 'INSERT') {
-              return [...prev, payload.new as Table];
-            }
-            if (payload.eventType === 'UPDATE') {
-              return prev.map((t) =>
+              next = [...prev, payload.new as Table];
+            } else if (payload.eventType === 'UPDATE') {
+              next = prev.map((t) =>
                 t.id === (payload.new as Table).id ? (payload.new as Table) : t
               );
+            } else if (payload.eventType === 'DELETE') {
+              next = prev.filter((t) => t.id !== (payload.old as Table).id);
+            } else {
+              next = prev;
             }
-            if (payload.eventType === 'DELETE') {
-              return prev.filter((t) => t.id !== (payload.old as Table).id);
-            }
-            return prev;
+            memoryTableCache = next;
+            return next;
           });
         }
       )

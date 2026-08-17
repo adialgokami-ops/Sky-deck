@@ -38,6 +38,9 @@ const ADMIN_STATUS_CYCLE: Record<TableStatus, TableStatus> = {
   pending: 'available', // clicking a pending table releases it
 };
 
+// Global in-memory cache for customer history log to eliminate re-fetch lag on tab switch
+let memoryCustomerLogCache: Booking[] | null = null;
+
 export default function AdminPage() {
   const [isAuthed, setIsAuthed] = useState(false);
   const [pin, setPin] = useState('');
@@ -66,7 +69,6 @@ export default function AdminPage() {
       });
 
       if (res.ok) {
-        // This is demo-only security, not production-grade.
         sessionStorage.setItem('skydeck_admin', 'true');
         setIsAuthed(true);
       } else {
@@ -86,22 +88,26 @@ export default function AdminPage() {
   }, []);
 
   if (!isAuthed) {
-    return <PinScreen
-      pin={pin}
-      setPin={setPin}
-      error={pinError}
-      loading={pinLoading}
-      onSubmit={handlePinSubmit}
-    />;
+    return (
+      <PinScreen
+        pin={pin}
+        setPin={setPin}
+        error={pinError}
+        loading={pinLoading}
+        onSubmit={handlePinSubmit}
+      />
+    );
   }
 
-  return <AdminDashboard
-    showHistory={showHistory}
-    setShowHistory={setShowHistory}
-    onLogout={handleLogout}
-    activeTab={activeTab}
-    setActiveTab={setActiveTab}
-  />;
+  return (
+    <AdminDashboard
+      showHistory={showHistory}
+      setShowHistory={setShowHistory}
+      onLogout={handleLogout}
+      activeTab={activeTab}
+      setActiveTab={setActiveTab}
+    />
+  );
 }
 
 // ── PIN Entry Screen ──────────────────────────────────────────────
@@ -168,11 +174,13 @@ function StatCard({
   label,
   value,
   accent,
+  loading,
 }: {
   icon: React.ElementType;
   label: string;
   value: number;
   accent: string;
+  loading?: boolean;
 }) {
   return (
     <div className="rounded-2xl border border-white/[0.06] bg-white/[0.025] p-4 backdrop-blur-sm hover:bg-white/[0.04] transition-colors">
@@ -181,7 +189,11 @@ function StatCard({
           <Icon size={18} />
         </div>
         <div>
-          <p className="text-2xl font-bold text-white tracking-tight">{value}</p>
+          {loading ? (
+            <div className="h-7 w-10 bg-white/10 rounded animate-pulse mb-1" />
+          ) : (
+            <p className="text-2xl font-bold text-white tracking-tight">{value}</p>
+          )}
           <p className="text-xs text-white/35 font-medium">{label}</p>
         </div>
       </div>
@@ -204,8 +216,8 @@ function AdminDashboard({
   activeTab: 'live' | 'customers';
   setActiveTab: (v: 'live' | 'customers') => void;
 }) {
-  const { tables } = useRealtimeTables();
-  const { bookings } = useRealtimeBookings();
+  const { tables, loading: tablesLoading } = useRealtimeTables();
+  const { bookings, loading: bookingsLoading } = useRealtimeBookings();
   const pendingBookings = bookings.filter((b) => b.status === 'pending');
   const historyBookings = bookings
     .filter((b) => ['confirmed', 'cancelled', 'expired'].includes(b.status))
@@ -314,148 +326,187 @@ function AdminDashboard({
 
         {activeTab === 'customers' && <CustomersSection />}
 
-        {activeTab === 'live' && (<>
-        {/* ── Quick Stats ── */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-8">
-          <StatCard
-            icon={LayoutGrid}
-            label="Total Tables"
-            value={stats.total}
-            accent="bg-white/[0.06] text-white/60"
-          />
-          <StatCard
-            icon={Armchair}
-            label="Available"
-            value={stats.available}
-            accent="bg-emerald-500/10 text-emerald-400"
-          />
-          <StatCard
-            icon={Users}
-            label="Occupied"
-            value={stats.occupied}
-            accent="bg-red-500/10 text-red-400"
-          />
-          <StatCard
-            icon={Bell}
-            label="Pending"
-            value={stats.pending}
-            accent="bg-amber-500/10 text-amber-400"
-          />
-        </div>
-
-        {/* ── Section: Request Queue ── */}
-        {pendingBookings.length > 0 && (
-          <section className="mb-8">
-            <div className="flex items-center gap-3 mb-4">
-              <div className="flex items-center gap-2">
-                <Bell size={18} className="text-amber-400" />
-                <h2 className="font-serif text-lg font-bold text-white">
-                  Incoming Requests
-                </h2>
-              </div>
-              <span className="flex items-center gap-1.5 rounded-full bg-amber-500/15 px-3 py-1 text-xs font-bold text-amber-400 border border-amber-500/20">
-                <span className="h-1.5 w-1.5 rounded-full bg-amber-400 animate-pulse" />
-                {pendingBookings.length} new
-              </span>
+        {activeTab === 'live' && (
+          <>
+            {/* ── Quick Stats ── */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-8">
+              <StatCard
+                icon={LayoutGrid}
+                label="Total Tables"
+                value={stats.total}
+                accent="bg-white/[0.06] text-white/60"
+                loading={tablesLoading}
+              />
+              <StatCard
+                icon={Armchair}
+                label="Available"
+                value={stats.available}
+                accent="bg-emerald-500/10 text-emerald-400"
+                loading={tablesLoading}
+              />
+              <StatCard
+                icon={Users}
+                label="Occupied"
+                value={stats.occupied}
+                accent="bg-red-500/10 text-red-400"
+                loading={tablesLoading}
+              />
+              <StatCard
+                icon={Bell}
+                label="Pending"
+                value={stats.pending}
+                accent="bg-amber-500/10 text-amber-400"
+                loading={tablesLoading}
+              />
             </div>
 
-            <div className="space-y-3">
-              {pendingBookings.map((booking) => (
-                <BookingRequestCard
-                  key={booking.id}
-                  booking={booking}
-                  onConfirm={() => confirmBooking(booking)}
-                  onRelease={() => releaseBooking(booking)}
-                />
-              ))}
-            </div>
-          </section>
-        )}
-
-        {/* ── Section: Live Table Grid ── */}
-        <section className="mb-8">
-          <div className="flex items-center gap-2 mb-5">
-            <LayoutGrid size={18} className="text-white/40" />
-            <h2 className="font-serif text-lg font-bold text-white">
-              Table Overview
-            </h2>
-          </div>
-
-          {ZONES.map((zone) => {
-            const zoneTables = tables.filter((t) => t.zone === zone);
-            if (zoneTables.length === 0) return null;
-
-            const zoneAvailable = zoneTables.filter((t) => t.status === 'available').length;
-
-            return (
-              <div key={zone} className="mb-6">
-                <div className="flex items-center justify-between mb-3">
-                  <h3 className="text-sm font-semibold uppercase tracking-wider text-white/30">
-                    {zone}
-                  </h3>
-                  <span className="text-xs text-white/20 font-medium">
-                    {zoneAvailable}/{zoneTables.length} available
+            {/* ── Section: Request Queue ── */}
+            {pendingBookings.length > 0 && (
+              <section className="mb-8">
+                <div className="flex items-center gap-3 mb-4">
+                  <div className="flex items-center gap-2">
+                    <Bell size={18} className="text-amber-400" />
+                    <h2 className="font-serif text-lg font-bold text-white">
+                      Incoming Requests
+                    </h2>
+                  </div>
+                  <span className="flex items-center gap-1.5 rounded-full bg-amber-500/15 px-3 py-1 text-xs font-bold text-amber-400 border border-amber-500/20">
+                    <span className="h-1.5 w-1.5 rounded-full bg-amber-400 animate-pulse" />
+                    {pendingBookings.length} new
                   </span>
                 </div>
-                <div className="grid grid-cols-3 gap-3 sm:grid-cols-4 md:grid-cols-6">
-                  {zoneTables.map((table) => (
-                    <TableCard
-                      key={table.id}
-                      table={table}
-                      adminMode
-                      onClick={() => cycleTableStatus(table)}
+
+                <div className="space-y-3">
+                  {pendingBookings.map((booking) => (
+                    <BookingRequestCard
+                      key={booking.id}
+                      booking={booking}
+                      onConfirm={() => confirmBooking(booking)}
+                      onRelease={() => releaseBooking(booking)}
                     />
                   ))}
                 </div>
-              </div>
-            );
-          })}
-        </section>
-
-        {/* ── Section: Recent History (collapsible) ── */}
-        <section>
-          <button
-            onClick={() => setShowHistory(!showHistory)}
-            className="mb-4 flex w-full items-center justify-between rounded-2xl border border-white/[0.06] bg-white/[0.02] px-5 py-3.5 text-left transition-all hover:bg-white/[0.04] hover:border-white/[0.1]"
-          >
-            <div className="flex items-center gap-2">
-              <History size={16} className="text-white/30" />
-              <h2 className="font-serif text-base font-bold text-white/50">
-                Recent History
-              </h2>
-              {historyBookings.length > 0 && (
-                <span className="text-xs text-white/20 font-medium">
-                  ({historyBookings.length})
-                </span>
-              )}
-            </div>
-            {showHistory ? (
-              <ChevronUp size={16} className="text-white/25" />
-            ) : (
-              <ChevronDown size={16} className="text-white/25" />
+              </section>
             )}
-          </button>
 
-          {showHistory && (
-            <div className="space-y-2 animate-fadeIn">
-              {historyBookings.length === 0 && (
-                <p className="py-6 text-center text-sm text-white/20">No recent activity</p>
+            {/* ── Section: Live Table Grid ── */}
+            <section className="mb-8">
+              <div className="flex items-center gap-2 mb-5">
+                <LayoutGrid size={18} className="text-white/40" />
+                <h2 className="font-serif text-lg font-bold text-white">
+                  Table Overview
+                </h2>
+              </div>
+
+              {tablesLoading ? (
+                <TableOverviewSkeleton />
+              ) : (
+                ZONES.map((zone) => {
+                  const zoneTables = tables.filter((t) => t.zone === zone);
+                  if (zoneTables.length === 0) return null;
+
+                  const zoneAvailable = zoneTables.filter((t) => t.status === 'available').length;
+
+                  return (
+                    <div key={zone} className="mb-6">
+                      <div className="flex items-center justify-between mb-3">
+                        <h3 className="text-sm font-semibold uppercase tracking-wider text-white/30">
+                          {zone}
+                        </h3>
+                        <span className="text-xs text-white/20 font-medium">
+                          {zoneAvailable}/{zoneTables.length} available
+                        </span>
+                      </div>
+                      <div className="grid grid-cols-3 gap-3 sm:grid-cols-4 md:grid-cols-6">
+                        {zoneTables.map((table) => (
+                          <TableCard
+                            key={table.id}
+                            table={table}
+                            adminMode
+                            onClick={() => cycleTableStatus(table)}
+                          />
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })
               )}
-              {historyBookings.map((booking) => (
-                <HistoryCard key={booking.id} booking={booking} />
-              ))}
-            </div>
-          )}
-        </section>
-        </>)}
+            </section>
+
+            {/* ── Section: Recent History (collapsible) ── */}
+            <section>
+              <button
+                onClick={() => setShowHistory(!showHistory)}
+                className="mb-4 flex w-full items-center justify-between rounded-2xl border border-white/[0.06] bg-white/[0.02] px-5 py-3.5 text-left transition-all hover:bg-white/[0.04] hover:border-white/[0.1]"
+              >
+                <div className="flex items-center gap-2">
+                  <History size={16} className="text-white/30" />
+                  <h2 className="font-serif text-base font-bold text-white/50">
+                    Recent History
+                  </h2>
+                  {historyBookings.length > 0 && (
+                    <span className="text-xs text-white/20 font-medium">
+                      ({historyBookings.length})
+                    </span>
+                  )}
+                </div>
+                {showHistory ? (
+                  <ChevronUp size={16} className="text-white/25" />
+                ) : (
+                  <ChevronDown size={16} className="text-white/25" />
+                )}
+              </button>
+
+              {showHistory && (
+                <div className="space-y-2 animate-fadeIn">
+                  {bookingsLoading ? (
+                    <div className="space-y-2">
+                      {[1, 2, 3].map((i) => (
+                        <div key={i} className="h-14 rounded-xl bg-white/[0.03] animate-pulse" />
+                      ))}
+                    </div>
+                  ) : historyBookings.length === 0 ? (
+                    <p className="py-6 text-center text-sm text-white/20">No recent activity</p>
+                  ) : (
+                    historyBookings.map((booking) => (
+                      <HistoryCard key={booking.id} booking={booking} />
+                    ))
+                  )}
+                </div>
+              )}
+            </section>
+          </>
+        )}
 
         {/* ── Footer ── */}
         <footer className="mt-12 pt-6 border-t border-white/[0.04] text-center">
           <p className="text-xs text-white/15">
-            SkyDeck Staff Dashboard · Auto-refreshing every 5s
+            SkyDeck Staff Dashboard · Live Realtime Connection
           </p>
         </footer>
       </div>
+    </div>
+  );
+}
+
+// ── Skeletons ─────────────────────────────────────────────────────
+
+function TableOverviewSkeleton() {
+  return (
+    <div className="space-y-6">
+      {['Rooftop', 'Indoor AC', 'Outdoor', 'Family Bar'].map((zone) => (
+        <div key={zone} className="mb-6">
+          <div className="flex items-center justify-between mb-3">
+            <div className="h-4 w-24 bg-white/10 rounded animate-pulse" />
+            <div className="h-3 w-16 bg-white/5 rounded animate-pulse" />
+          </div>
+          <div className="grid grid-cols-3 gap-3 sm:grid-cols-4 md:grid-cols-6">
+            {[1, 2, 3, 4, 5, 6].map((i) => (
+              <div key={i} className="h-24 rounded-2xl bg-white/[0.03] border border-white/[0.05] animate-pulse" />
+            ))}
+          </div>
+        </div>
+      ))}
     </div>
   );
 }
@@ -505,215 +556,228 @@ function BookingRequestCard({
     return () => clearInterval(interval);
   }, [booking.created_at]);
 
-  const tableLabel = booking.tables?.label ?? '—';
-  const tableZone = booking.tables?.zone ?? '—';
-  const timeSince = getTimeSince(booking.created_at);
-  const parsedNote = parseBookingNote(booking.note);
+  const parsedNote = useMemo(() => parseBookingNote(booking.note), [booking.note]);
 
-  // Detect booking source
-  const isBookForLater = !!(parsedNote['date'] || parsedNote['time']);
-  const bookingSource = isBookForLater ? 'Book for Later' : 'Book Now';
+  // Clean phone number for links
+  const rawPhone = booking.phone.replace(/\D/g, '');
+  const telLink = `tel:+91${rawPhone}`;
+  const isAdvance = !!(parsedNote['date'] || parsedNote['time']);
+  const waText = encodeURIComponent(
+    isAdvance
+      ? `Hi ${booking.guest_name}, this is SkyDeck confirming your reservation for ${booking.party_size} guests on ${parsedNote['date'] || 'tonight'} at ${parsedNote['time'] || ''}. Ref: #${booking.id.slice(-6).toUpperCase()}. Looking forward to seeing you!`
+      : `Hi ${booking.guest_name}, your table request at SkyDeck for ${booking.party_size} guests is confirmed! Ref: #${booking.id.slice(-6).toUpperCase()}. Please proceed to the host stand.`
+  );
+  const waLink = `https://wa.me/91${rawPhone}?text=${waText}`;
 
-  const handleSaveNote = useCallback(async () => {
+  const saveStaffNote = async () => {
     if (!staffNote.trim()) return;
-    const existingNote = booking.note || '';
-    const updatedNote = existingNote + ` | Staff: ${staffNote.trim()}`;
-    await supabase.from('bookings').update({ note: updatedNote }).eq('id', booking.id);
+    const existing = booking.note || '';
+    const updated = existing
+      ? `${existing} | Staff: ${staffNote.trim()}`
+      : `Staff: ${staffNote.trim()}`;
+    await supabase.from('bookings').update({ note: updated }).eq('id', booking.id);
     setNoteSaved(true);
     setTimeout(() => setNoteSaved(false), 2000);
-  }, [staffNote, booking.id, booking.note]);
+  };
 
   return (
-    <div className={`rounded-2xl border backdrop-blur-sm transition-all ${
-      isUrgent
-        ? 'border-red-500/25 bg-red-500/[0.04] shadow-lg shadow-red-500/5'
-        : 'border-amber-500/15 bg-amber-500/[0.03]'
-    }`}>
-      {/* Main row */}
-      <div className="p-5">
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-3 mb-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-amber-500/10 border border-amber-500/15 shrink-0">
-                <span className="font-serif text-base font-bold text-amber-400">
-                  {booking.guest_name.charAt(0).toUpperCase()}
-                </span>
-              </div>
-              <div className="min-w-0">
-                <div className="flex items-center gap-2 flex-wrap">
-                  <span className="font-semibold text-white text-lg truncate">
-                    {booking.guest_name}
-                  </span>
-                  <span className="rounded-lg bg-white/[0.06] px-2 py-0.5 text-xs font-bold text-amber-400 border border-amber-500/15">
-                    {tableLabel}
-                  </span>
-                  <span className="rounded-lg bg-white/[0.04] px-2 py-0.5 text-[10px] font-medium text-white/30 border border-white/[0.06]">
-                    {bookingSource}
-                  </span>
-                </div>
-                <span className="text-xs text-white/30 flex items-center gap-1 mt-0.5">
-                  <Clock size={11} />
-                  {timeSince} · {tableZone}
-                </span>
-              </div>
-            </div>
-
-            {/* Quick contact + guests row */}
-            <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 ml-[52px]">
-              <a
-                href={`tel:+91${booking.phone}`}
-                className="flex items-center gap-1.5 rounded-lg bg-emerald-500/10 border border-emerald-500/20 px-3 py-1.5 text-sm font-medium text-emerald-400 hover:bg-emerald-500/20 transition-colors min-h-[44px]"
-              >
-                <Phone size={14} />
-                Call
-              </a>
-              <a
-                href={`https://wa.me/91${booking.phone}?text=${encodeURIComponent(`Hi ${booking.guest_name}, your table at SkyDeck is confirmed! See you soon.`)}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="flex items-center gap-1.5 rounded-lg bg-green-500/10 border border-green-500/20 px-3 py-1.5 text-sm font-medium text-green-400 hover:bg-green-500/20 transition-colors min-h-[44px]"
-              >
-                <MessageSquare size={14} />
-                WhatsApp
-              </a>
-              <span className="text-sm text-white/40 flex items-center gap-1">
-                <Users size={13} />
-                {booking.party_size} guests
-              </span>
-              <span className="text-sm text-white/30">
-                +91 {booking.phone}
-              </span>
-            </div>
+    <div
+      className={`rounded-2xl border transition-all duration-300 ${
+        isUrgent
+          ? 'border-red-500/30 bg-red-500/[0.04]'
+          : 'border-amber-500/20 bg-amber-500/[0.03] hover:border-amber-500/30'
+      }`}
+    >
+      {/* Main card row */}
+      <div className="p-4 sm:p-5 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        {/* Left: Guest info */}
+        <div className="space-y-1">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="font-serif text-lg font-bold text-white">
+              {booking.guest_name}
+            </span>
+            <span className="rounded-full bg-white/[0.06] px-2.5 py-0.5 text-xs text-white/50 font-medium">
+              {booking.party_size} {booking.party_size === 1 ? 'guest' : 'guests'}
+            </span>
+            <span className="rounded-full bg-amber-500/15 border border-amber-500/25 px-2 py-0.5 text-[10px] font-mono font-bold text-amber-400">
+              #{booking.id.slice(-6).toUpperCase()}
+            </span>
           </div>
 
-          {/* Actions */}
-          <div className="flex items-center gap-3 shrink-0 ml-[52px] sm:ml-0">
-            <div className={`rounded-xl px-3 py-2 text-center min-w-[4.5rem] border ${
-              isUrgent
-                ? 'bg-red-500/10 border-red-500/20'
-                : 'bg-white/[0.04] border-white/[0.08]'
-            }`}>
-              <p className="text-[10px] text-white/25 uppercase tracking-wider mb-0.5">Expires</p>
-              <p className={`font-mono text-base font-bold ${
-                isUrgent ? 'text-red-400' : 'text-white/60'
-              }`}>
-                {countdown}
-              </p>
-            </div>
-
-            <button
-              onClick={onConfirm}
-              className="flex items-center gap-2 rounded-xl bg-emerald-600 px-5 py-2.5 text-sm font-semibold text-white shadow-lg shadow-emerald-600/20 transition-all hover:bg-emerald-500 hover:shadow-emerald-500/30 hover:scale-[1.02] active:scale-[0.97] min-h-[44px]"
-            >
-              <CheckCircle2 size={16} />
-              Confirm
-            </button>
-            <button
-              onClick={onRelease}
-              className="flex items-center gap-2 rounded-xl border border-white/[0.08] bg-white/[0.03] px-4 py-2.5 text-sm font-medium text-white/50 transition-all hover:bg-red-500/10 hover:text-red-400 hover:border-red-500/25 active:scale-[0.97] min-h-[44px]"
-            >
-              <XCircle size={16} />
-              Release
-            </button>
+          <div className="flex items-center gap-2 text-xs text-white/40">
+            <Phone size={12} className="text-white/30" />
+            <span>+91 {booking.phone}</span>
           </div>
+
+          {/* Special notes preview */}
+          {booking.note && !expanded && (
+            <p className="text-xs text-white/35 italic truncate max-w-md">
+              📝 {booking.note}
+            </p>
+          )}
         </div>
 
-        {/* Expand toggle */}
-        <button
-          onClick={() => setExpanded(!expanded)}
-          className="mt-3 ml-[52px] flex items-center gap-1 text-xs text-white/25 hover:text-white/50 transition-colors"
-        >
-          {expanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
-          {expanded ? 'Hide details' : 'View full details'}
-        </button>
+        {/* Right: Actions */}
+        <div className="flex items-center gap-2 shrink-0 flex-wrap">
+          {/* Countdown */}
+          <div
+            className={`flex items-center gap-1.5 rounded-xl px-3 py-2 text-xs font-mono font-bold ${
+              isUrgent
+                ? 'bg-red-500/20 text-red-400 border border-red-500/30 animate-pulse'
+                : 'bg-white/[0.04] text-amber-400 border border-white/[0.06]'
+            }`}
+          >
+            <Clock size={13} />
+            <span>{countdown}</span>
+          </div>
+
+          {/* Quick Call */}
+          <a
+            href={telLink}
+            title="Call guest"
+            className="flex h-9 w-9 items-center justify-center rounded-xl border border-white/[0.08] bg-white/[0.04] text-white/50 transition-all hover:bg-emerald-500/20 hover:text-emerald-400 hover:border-emerald-500/30"
+          >
+            <Phone size={14} />
+          </a>
+
+          {/* Quick WhatsApp */}
+          <a
+            href={waLink}
+            target="_blank"
+            rel="noopener noreferrer"
+            title="WhatsApp guest"
+            className="flex h-9 w-9 items-center justify-center rounded-xl border border-white/[0.08] bg-white/[0.04] text-white/50 transition-all hover:bg-emerald-500/20 hover:text-emerald-400 hover:border-emerald-500/30"
+          >
+            <MessageSquare size={14} />
+          </a>
+
+          {/* Expand Info */}
+          <button
+            onClick={() => setExpanded(!expanded)}
+            title="Client info"
+            className={`flex h-9 w-9 items-center justify-center rounded-xl border transition-all ${
+              expanded
+                ? 'border-amber-500/40 bg-amber-500/15 text-amber-400'
+                : 'border-white/[0.08] bg-white/[0.04] text-white/40 hover:text-white/70 hover:bg-white/[0.08]'
+            }`}
+          >
+            {expanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+          </button>
+
+          {/* Confirm */}
+          <button
+            onClick={onConfirm}
+            className="flex items-center gap-1.5 rounded-xl bg-emerald-600 px-4 py-2 text-xs font-semibold text-white shadow-md shadow-emerald-600/20 transition-all hover:bg-emerald-500 active:scale-[0.97]"
+          >
+            <CheckCircle2 size={13} />
+            Confirm
+          </button>
+
+          {/* Release */}
+          <button
+            onClick={onRelease}
+            className="flex items-center gap-1.5 rounded-xl border border-red-500/20 bg-red-500/10 px-3 py-2 text-xs font-medium text-red-400 transition-all hover:bg-red-500/20 active:scale-[0.97]"
+          >
+            <XCircle size={13} />
+            Release
+          </button>
+        </div>
       </div>
 
-      {/* Expanded client info panel */}
+      {/* ── Expandable Client Info Panel ── */}
       {expanded && (
-        <div className="border-t border-white/[0.06] px-5 py-4 animate-fadeIn space-y-4">
-          <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 text-sm">
+        <div className="border-t border-white/[0.06] bg-black/20 p-4 sm:p-5 rounded-b-2xl animate-fadeIn space-y-4">
+          <p className="text-[10px] uppercase font-bold tracking-widest text-amber-400/80">
+            Guest Details &amp; Follow-up
+          </p>
+
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 text-xs">
             <div>
-              <span className="text-[10px] uppercase tracking-wider text-white/25 block mb-1">Phone</span>
-              <span className="text-white/70 font-medium">+91 {booking.phone}</span>
-            </div>
-            {parsedNote['email'] && (
-              <div>
-                <span className="text-[10px] uppercase tracking-wider text-white/25 block mb-1">Email</span>
-                <span className="text-white/70 font-medium">{parsedNote['email']}</span>
-              </div>
-            )}
-            <div>
-              <span className="text-[10px] uppercase tracking-wider text-white/25 block mb-1">Party Size</span>
-              <span className="text-white/70 font-medium">{booking.party_size} guests</span>
+              <p className="text-white/30 font-medium mb-0.5">Guest Name</p>
+              <p className="font-semibold text-white">{booking.guest_name}</p>
             </div>
             <div>
-              <span className="text-[10px] uppercase tracking-wider text-white/25 block mb-1">Table</span>
-              <span className="text-white/70 font-medium">{tableLabel} · {tableZone}</span>
+              <p className="text-white/30 font-medium mb-0.5">Party Size</p>
+              <p className="font-semibold text-white">{booking.party_size} guests</p>
+            </div>
+            <div>
+              <p className="text-white/30 font-medium mb-0.5">Booking Ref</p>
+              <p className="font-mono font-bold text-amber-400">#{booking.id.slice(-6).toUpperCase()}</p>
+            </div>
+            <div>
+              <p className="text-white/30 font-medium mb-0.5">Requested At</p>
+              <p className="font-medium text-white/70">
+                {new Date(booking.created_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}
+              </p>
             </div>
             {parsedNote['date'] && (
               <div>
-                <span className="text-[10px] uppercase tracking-wider text-white/25 block mb-1">Date</span>
-                <span className="text-white/70 font-medium">{parsedNote['date']}</span>
+                <p className="text-white/30 font-medium mb-0.5">Reservation Date</p>
+                <p className="font-semibold text-amber-300">{parsedNote['date']}</p>
               </div>
             )}
             {parsedNote['time'] && (
               <div>
-                <span className="text-[10px] uppercase tracking-wider text-white/25 block mb-1">Time</span>
-                <span className="text-white/70 font-medium">{parsedNote['time']}</span>
+                <p className="text-white/30 font-medium mb-0.5">Reservation Time</p>
+                <p className="font-semibold text-amber-300">{parsedNote['time']}</p>
               </div>
             )}
             {parsedNote['occasion'] && (
               <div>
-                <span className="text-[10px] uppercase tracking-wider text-white/25 block mb-1">Occasion</span>
-                <span className="text-amber-400/80 font-medium">{parsedNote['occasion']}</span>
+                <p className="text-white/30 font-medium mb-0.5">Occasion</p>
+                <p className="font-semibold text-white">🎉 {parsedNote['occasion']}</p>
               </div>
             )}
             {parsedNote['dietary'] && (
               <div>
-                <span className="text-[10px] uppercase tracking-wider text-white/25 block mb-1">Dietary</span>
-                <span className="text-white/70 font-medium">{parsedNote['dietary']}</span>
+                <p className="text-white/30 font-medium mb-0.5">Dietary</p>
+                <p className="font-semibold text-emerald-300">🥗 {parsedNote['dietary']}</p>
               </div>
             )}
-            {parsedNote['confirm via'] && (
+            {parsedNote['email'] && (
               <div>
-                <span className="text-[10px] uppercase tracking-wider text-white/25 block mb-1">Confirm Via</span>
-                <span className="text-white/70 font-medium capitalize">{parsedNote['confirm via']}</span>
+                <p className="text-white/30 font-medium mb-0.5">Email</p>
+                <a href={`mailto:${parsedNote['email']}`} className="text-amber-400 hover:underline">
+                  {parsedNote['email']}
+                </a>
               </div>
             )}
-            {parsedNote['requests'] && (
-              <div className="col-span-2 sm:col-span-3">
-                <span className="text-[10px] uppercase tracking-wider text-white/25 block mb-1">Special Requests</span>
-                <span className="text-white/50 italic">{parsedNote['requests']}</span>
-              </div>
-            )}
-            <div>
-              <span className="text-[10px] uppercase tracking-wider text-white/25 block mb-1">Source</span>
-              <span className="text-white/40 font-medium">{bookingSource}</span>
-            </div>
-            <div>
-              <span className="text-[10px] uppercase tracking-wider text-white/25 block mb-1">Booked At</span>
-              <span className="text-white/40 font-medium">
-                {new Date(booking.created_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}
-              </span>
-            </div>
+          </div>
+
+          {/* Contact action buttons */}
+          <div className="flex gap-2 pt-1">
+            <a
+              href={telLink}
+              className="flex items-center gap-1.5 rounded-xl border border-white/[0.08] bg-white/[0.04] px-3.5 py-2 text-xs font-semibold text-white/80 hover:bg-emerald-500/20 hover:text-emerald-400 hover:border-emerald-500/30 transition-all"
+            >
+              <Phone size={13} />
+              Call +91 {booking.phone}
+            </a>
+            <a
+              href={waLink}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-1.5 rounded-xl border border-emerald-500/20 bg-emerald-500/10 px-3.5 py-2 text-xs font-semibold text-emerald-400 hover:bg-emerald-500/20 transition-all"
+            >
+              <MessageSquare size={13} />
+              WhatsApp Message
+            </a>
           </div>
 
           {/* Staff notes */}
-          <div>
-            <span className="text-[10px] uppercase tracking-wider text-white/25 block mb-2">Staff Notes</span>
+          <div className="pt-2 border-t border-white/[0.05]">
+            <p className="text-white/30 text-xs font-medium mb-1.5">Add Staff Note</p>
             <div className="flex gap-2">
               <input
                 type="text"
+                placeholder='e.g. "guest called, running 5 mins late"'
                 value={staffNote}
                 onChange={(e) => setStaffNote(e.target.value)}
-                placeholder='e.g. "Confirmed via call, moved to 8:30 PM"'
-                className="flex-1 rounded-xl border border-white/[0.08] bg-white/[0.03] px-3 py-2.5 text-sm text-white placeholder:text-white/20 focus:border-amber-500/30 focus:outline-none transition-colors"
-                onKeyDown={(e) => e.key === 'Enter' && handleSaveNote()}
+                className="flex-1 rounded-xl border border-white/[0.08] bg-white/[0.03] px-3 py-1.5 text-xs text-white placeholder:text-white/20 focus:outline-none focus:border-amber-500/30"
               />
               <button
-                onClick={handleSaveNote}
-                disabled={!staffNote.trim()}
-                className="rounded-xl bg-white/[0.06] border border-white/[0.08] px-4 py-2.5 text-xs font-medium text-white/50 hover:bg-white/[0.1] hover:text-white/80 transition-all disabled:opacity-30 disabled:cursor-not-allowed min-h-[44px]"
+                onClick={saveStaffNote}
+                className="rounded-xl border border-white/[0.08] bg-white/[0.05] px-3 py-1.5 text-xs font-medium text-white/60 hover:text-white hover:bg-white/[0.1] transition-colors"
               >
                 {noteSaved ? '✓ Saved' : 'Save'}
               </button>
@@ -729,21 +793,22 @@ function BookingRequestCard({
 
 function HistoryCard({ booking }: { booking: Booking }) {
   const tableLabel = booking.tables?.label ?? '—';
+
   const statusConfig = {
     confirmed: {
       label: 'Confirmed',
+      classes: 'text-emerald-400 bg-emerald-500/10 border-emerald-500/20',
       icon: CheckCircle2,
-      classes: 'text-emerald-400 bg-emerald-500/10 border-emerald-500/15',
     },
     cancelled: {
       label: 'Released',
+      classes: 'text-red-400 bg-red-500/10 border-red-500/20',
       icon: XCircle,
-      classes: 'text-red-400 bg-red-500/10 border-red-500/15',
     },
     expired: {
       label: 'Expired',
+      classes: 'text-white/30 bg-white/[0.04] border-white/[0.08]',
       icon: Clock,
-      classes: 'text-white/35 bg-white/[0.04] border-white/[0.08]',
     },
   };
 
@@ -824,18 +889,20 @@ function CustomersSection() {
   const [zoneFilter, setZoneFilter] = useState('All');
   const [statusFilter, setStatusFilter] = useState('All');
   const [expandedId, setExpandedId] = useState<string | null>(null);
-  const [allBookings, setAllBookings] = useState<Booking[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [allBookings, setAllBookings] = useState<Booking[]>(() => memoryCustomerLogCache || []);
+  const [loading, setLoading] = useState(() => !memoryCustomerLogCache);
 
-  // Fetch ALL bookings once (no status filter) for historical log
+  // Fetch ALL bookings once with in-memory caching
   useEffect(() => {
     const fetchAll = async () => {
-      setLoading(true);
+      if (!memoryCustomerLogCache) setLoading(true);
       const { data } = await supabase
         .from('bookings')
-        .select('*, tables(*)')
+        .select('id, table_id, guest_name, phone, party_size, note, status, created_at, tables(id, label, zone, capacity)')
         .order('created_at', { ascending: false });
-      setAllBookings((data as Booking[]) || []);
+      const fresh = (data as unknown as Booking[]) || [];
+      memoryCustomerLogCache = fresh;
+      setAllBookings(fresh);
       setLoading(false);
     };
     fetchAll();
@@ -973,8 +1040,10 @@ function CustomersSection() {
 
       {/* Bookings list */}
       {loading ? (
-        <div className="flex items-center justify-center py-16">
-          <div className="h-7 w-7 animate-spin rounded-full border-4 border-amber-500/30 border-t-amber-500" />
+        <div className="space-y-3">
+          {[1, 2, 3, 4, 5].map((i) => (
+            <div key={i} className="h-20 rounded-2xl border border-white/[0.06] bg-white/[0.02] animate-pulse" />
+          ))}
         </div>
       ) : filtered.length === 0 ? (
         <div className="py-16 text-center">
@@ -999,152 +1068,130 @@ function CustomersSection() {
                 key={booking.id}
                 className="rounded-2xl border border-white/[0.06] bg-white/[0.02] overflow-hidden transition-all hover:bg-white/[0.03]"
               >
-                {/* Row */}
-                <button
-                  className="w-full text-left px-4 py-3.5"
+                {/* Row Summary */}
+                <div
                   onClick={() => setExpandedId(isExpanded ? null : booking.id)}
+                  className="p-4 sm:px-5 flex items-center justify-between gap-3 cursor-pointer select-none"
                 >
+                  {/* Left: Avatar + Name + Phone */}
                   <div className="flex items-center gap-3 min-w-0">
-                    {/* Avatar */}
-                    <div className="h-9 w-9 rounded-xl bg-white/[0.06] flex items-center justify-center shrink-0">
-                      <span className="text-sm font-bold text-white/40">
-                        {booking.guest_name.charAt(0).toUpperCase()}
-                      </span>
+                    <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-white/[0.04] text-xs font-bold text-white/50 shrink-0">
+                      {booking.guest_name.charAt(0).toUpperCase()}
                     </div>
-
-                    {/* Main info */}
-                    <div className="flex-1 min-w-0">
+                    <div className="min-w-0">
                       <div className="flex items-center gap-2 flex-wrap">
-                        <span className="font-semibold text-white/80 text-sm truncate">
+                        <span className="font-medium text-sm text-white truncate">
                           {booking.guest_name}
                         </span>
-                        <span className="text-[10px] text-white/25 font-mono">
-                          {tableLabel} · {zone}
+                        <span className="font-mono text-[10px] text-white/25">
+                          #{booking.id.slice(-6).toUpperCase()}
                         </span>
                         {isBookForLater && (
-                          <span className="text-[10px] text-white/20 border border-white/[0.08] rounded px-1.5 py-0.5">
-                            Later
+                          <span className="rounded-full bg-blue-500/15 border border-blue-500/20 px-2 py-0.2 text-[9px] font-bold text-blue-400">
+                            Scheduled
                           </span>
                         )}
                       </div>
-                      <div className="flex items-center gap-2 mt-0.5 text-xs text-white/25">
-                        <span>{booking.party_size} guests</span>
-                        <span>·</span>
-                        <span>{bookingTime}</span>
-                        {parsed['occasion'] && (
-                          <>
-                            <span>·</span>
-                            <span className="text-amber-400/60">{parsed['occasion']}</span>
-                          </>
-                        )}
-                      </div>
-                    </div>
-
-                    {/* Status badge + expand */}
-                    <div className="flex items-center gap-2 shrink-0">
-                      <span className={`text-xs font-medium rounded-full border px-2.5 py-0.5 ${statusCfg.classes}`}>
-                        {statusCfg.label}
-                      </span>
-                      {isExpanded
-                        ? <ChevronUp size={14} className="text-white/25" />
-                        : <ChevronDown size={14} className="text-white/25" />
-                      }
+                      <p className="text-xs text-white/35">
+                        +91 {booking.phone} · {booking.party_size} guests
+                      </p>
                     </div>
                   </div>
-                </button>
 
-                {/* Expanded detail panel */}
+                  {/* Right: Zone + Time + Status + Chevron */}
+                  <div className="flex items-center gap-2 sm:gap-3 shrink-0">
+                    <span className="hidden sm:block text-xs text-white/25 font-mono">
+                      {bookingTime}
+                    </span>
+                    <span className="rounded-lg bg-white/[0.04] px-2 py-0.5 text-xs text-white/40 font-medium">
+                      {zone} · {tableLabel}
+                    </span>
+                    <span className={`rounded-full border px-2.5 py-0.5 text-xs font-medium ${statusCfg.classes}`}>
+                      {statusCfg.label}
+                    </span>
+                    <span className="text-white/20">
+                      {isExpanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Expanded Details */}
                 {isExpanded && (
-                  <div className="border-t border-white/[0.05] px-4 py-4 space-y-4 animate-fadeIn">
-                    {/* Contact actions */}
-                    <div className="flex flex-wrap items-center gap-2">
-                      <a
-                        href={`tel:+91${booking.phone}`}
-                        className="flex items-center gap-1.5 rounded-lg bg-emerald-500/10 border border-emerald-500/20 px-3 py-2 text-sm font-medium text-emerald-400 hover:bg-emerald-500/20 transition-colors"
-                      >
-                        <Phone size={13} /> Call
-                      </a>
-                      <a
-                        href={`https://wa.me/91${booking.phone}?text=${encodeURIComponent(`Hi ${booking.guest_name}, thank you for visiting SkyDeck!`)}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="flex items-center gap-1.5 rounded-lg bg-green-500/10 border border-green-500/20 px-3 py-2 text-sm font-medium text-green-400 hover:bg-green-500/20 transition-colors"
-                      >
-                        <MessageSquare size={13} /> WhatsApp
-                      </a>
-                      <span className="text-sm text-white/30 ml-1">+91 {booking.phone}</span>
-                    </div>
-
-                    {/* Details grid */}
-                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 text-sm">
+                  <div className="border-t border-white/[0.04] bg-black/20 p-4 sm:p-5 animate-fadeIn space-y-4">
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
                       <div>
-                        <span className="text-[10px] uppercase tracking-wider text-white/25 block mb-0.5">Table</span>
-                        <span className="text-white/60 font-medium">{tableLabel} · {zone}</span>
+                        <p className="text-white/30 mb-0.5">Table</p>
+                        <p className="font-semibold text-white">{tableLabel} ({zone})</p>
                       </div>
                       <div>
-                        <span className="text-[10px] uppercase tracking-wider text-white/25 block mb-0.5">Party Size</span>
-                        <span className="text-white/60 font-medium">{booking.party_size} guests</span>
-                      </div>
-                      <div>
-                        <span className="text-[10px] uppercase tracking-wider text-white/25 block mb-0.5">Booked At</span>
-                        <span className="text-white/60 font-medium">{bookingTime}</span>
-                      </div>
-                      <div>
-                        <span className="text-[10px] uppercase tracking-wider text-white/25 block mb-0.5">Status</span>
-                        <span className={`text-xs font-medium ${statusCfg.classes.split(' ')[0]}`}>{statusCfg.label}</span>
-                      </div>
-                      <div>
-                        <span className="text-[10px] uppercase tracking-wider text-white/25 block mb-0.5">Source</span>
-                        <span className="text-white/40 font-medium">{isBookForLater ? 'Book for Later' : 'Book Now'}</span>
+                        <p className="text-white/30 mb-0.5">Booked At</p>
+                        <p className="text-white/70">
+                          {new Date(booking.created_at).toLocaleString('en-IN', {
+                            day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit',
+                          })}
+                        </p>
                       </div>
                       {parsed['date'] && (
                         <div>
-                          <span className="text-[10px] uppercase tracking-wider text-white/25 block mb-0.5">Date</span>
-                          <span className="text-white/60 font-medium">{parsed['date']}</span>
+                          <p className="text-white/30 mb-0.5">Reservation Date</p>
+                          <p className="font-semibold text-amber-300">{parsed['date']}</p>
                         </div>
                       )}
                       {parsed['time'] && (
                         <div>
-                          <span className="text-[10px] uppercase tracking-wider text-white/25 block mb-0.5">Time Slot</span>
-                          <span className="text-white/60 font-medium">{parsed['time']}</span>
+                          <p className="text-white/30 mb-0.5">Reservation Time</p>
+                          <p className="font-semibold text-amber-300">{parsed['time']}</p>
                         </div>
                       )}
                       {parsed['occasion'] && (
                         <div>
-                          <span className="text-[10px] uppercase tracking-wider text-white/25 block mb-0.5">Occasion</span>
-                          <span className="text-amber-400/80 font-medium">{parsed['occasion']}</span>
+                          <p className="text-white/30 mb-0.5">Occasion</p>
+                          <p className="text-white">🎉 {parsed['occasion']}</p>
                         </div>
                       )}
                       {parsed['dietary'] && (
                         <div>
-                          <span className="text-[10px] uppercase tracking-wider text-white/25 block mb-0.5">Dietary</span>
-                          <span className="text-white/60 font-medium">{parsed['dietary']}</span>
+                          <p className="text-white/30 mb-0.5">Dietary</p>
+                          <p className="text-emerald-300">🥗 {parsed['dietary']}</p>
+                        </div>
+                      )}
+                      {parsed['requests'] && (
+                        <div className="col-span-2">
+                          <p className="text-white/30 mb-0.5">Special Requests</p>
+                          <p className="text-white/70 italic">📝 {parsed['requests']}</p>
+                        </div>
+                      )}
+                      {parsed['email'] && (
+                        <div>
+                          <p className="text-white/30 mb-0.5">Email</p>
+                          <a href={`mailto:${parsed['email']}`} className="text-amber-400 hover:underline">
+                            {parsed['email']}
+                          </a>
                         </div>
                       )}
                     </div>
 
-                    {/* Requests & staff notes */}
-                    {(parsed['requests'] || parsed['staff']) && (
-                      <div className="space-y-2">
-                        {parsed['requests'] && (
-                          <div>
-                            <span className="text-[10px] uppercase tracking-wider text-white/25 block mb-0.5">Special Requests</span>
-                            <p className="text-sm text-white/40 italic">{parsed['requests']}</p>
-                          </div>
-                        )}
-                        {parsed['staff'] && (
-                          <div>
-                            <span className="text-[10px] uppercase tracking-wider text-white/25 block mb-0.5">Staff Notes</span>
-                            <p className="text-sm text-white/50">{parsed['staff']}</p>
-                          </div>
-                        )}
-                      </div>
-                    )}
-
-                    {/* Booking ID */}
-                    <p className="text-[10px] text-white/15 font-mono">
-                      ID: {booking.id.slice(-12).toUpperCase()}
-                    </p>
+                    {/* Follow-up CTA buttons */}
+                    <div className="flex gap-2 pt-1">
+                      <a
+                        href={`tel:+91${booking.phone.replace(/\D/g, '')}`}
+                        className="flex items-center gap-1.5 rounded-xl border border-white/[0.08] bg-white/[0.04] px-3.5 py-2 text-xs font-semibold text-white/80 hover:bg-emerald-500/20 hover:text-emerald-400 hover:border-emerald-500/30 transition-all"
+                      >
+                        <Phone size={13} />
+                        Call +91 {booking.phone}
+                      </a>
+                      <a
+                        href={`https://wa.me/91${booking.phone.replace(/\D/g, '')}?text=${encodeURIComponent(
+                          `Hi ${booking.guest_name}, this is SkyDeck. Thank you for booking table ${tableLabel} (${zone}) with us! Let us know if you need anything.`
+                        )}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex items-center gap-1.5 rounded-xl border border-emerald-500/20 bg-emerald-500/10 px-3.5 py-2 text-xs font-semibold text-emerald-400 hover:bg-emerald-500/20 transition-all"
+                      >
+                        <MessageSquare size={13} />
+                        WhatsApp
+                      </a>
+                    </div>
                   </div>
                 )}
               </div>

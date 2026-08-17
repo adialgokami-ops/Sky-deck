@@ -51,12 +51,6 @@ export default function BookingModal({
   const isPhoneValid = /^\d{10}$/.test(phone);
   const isFormValid = name.trim().length > 0 && isPhoneValid && partySize >= 1;
 
-  // Request browser notification permission when modal opens
-  useEffect(() => {
-    if (typeof Notification !== 'undefined' && Notification.permission === 'default') {
-      Notification.requestPermission();
-    }
-  }, []);
 
   // Update state if activeSession status changes externally
   useEffect(() => {
