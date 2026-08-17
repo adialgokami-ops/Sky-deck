@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { X, Minus, Plus, CheckCircle2, AlertCircle, XCircle, Clock } from 'lucide-react';
+import { X, Minus, Plus, CheckCircle2, AlertCircle, XCircle, Clock, MapPin } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import type { Table } from '@/lib/types';
 import { EXPIRY_MINUTES } from '@/lib/types';
@@ -12,7 +12,7 @@ interface BookingModalProps {
   onBooked: () => void;
 }
 
-type ModalState = 'form' | 'submitting' | 'confirmed' | 'admin_confirmed' | 'admin_cancelled' | 'expired' | 'error';
+type ModalState = 'form' | 'submitting' | 'confirmed' | 'transitioning' | 'admin_confirmed' | 'admin_cancelled' | 'expired' | 'error';
 
 export default function BookingModal({ table, onClose, onBooked }: BookingModalProps) {
   const [state, setState] = useState<ModalState>('form');
@@ -31,9 +31,24 @@ export default function BookingModal({ table, onClose, onBooked }: BookingModalP
   const isFormValid = name.trim().length > 0 && isPhoneValid && partySize >= 1;
 
   // Helper to transition modal state based on booking status from DB
+  // Uses a brief 'transitioning' state so the UI closes the pending popup
+  // visually before the confirmed popup opens — clear before/after moment.
   const handleBookingStatusChange = useCallback((newStatus: string) => {
     if (newStatus === 'confirmed') {
-      setState('admin_confirmed');
+      // Step 1: transition out (briefly hide body content, keep modal frame)
+      setState('transitioning');
+      // Step 2: after short pause, show new distinct confirmed popup
+      setTimeout(() => {
+        setState('admin_confirmed');
+        // Fire browser push notification
+        if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
+          new Notification('SkyDeck — Booking Confirmed! 🎉', {
+            body: `Your table has been confirmed. Please proceed to your table. Enjoy SkyDeck!`,
+            icon: '/images/skydeck-icon.png',
+            tag: 'skydeck-booking-confirmed',
+          });
+        }
+      }, 400);
     } else if (newStatus === 'cancelled') {
       setState('admin_cancelled');
     } else if (newStatus === 'expired') {
@@ -41,9 +56,14 @@ export default function BookingModal({ table, onClose, onBooked }: BookingModalP
     }
   }, []);
 
+  // Request browser notification permission when the user has a pending booking
+  useEffect(() => {
+    if (typeof Notification !== 'undefined' && Notification.permission === 'default') {
+      Notification.requestPermission();
+    }
+  }, []);
+
   // Subscribe to realtime booking status changes after booking is created
-  // Uses unfiltered subscription (matching the working useRealtimeBookings pattern)
-  // because filtered subscriptions require REPLICA IDENTITY FULL on the table
   useEffect(() => {
     if (!bookingIdRef.current || state === 'form' || state === 'submitting' || state === 'error') return;
 
@@ -59,7 +79,6 @@ export default function BookingModal({ table, onClose, onBooked }: BookingModalP
           table: 'bookings',
         },
         (payload) => {
-          // Check if this update is for our booking
           const updated = payload.new as { id: string; status: string };
           if (updated.id === bookingId) {
             handleBookingStatusChange(updated.status);
@@ -74,7 +93,6 @@ export default function BookingModal({ table, onClose, onBooked }: BookingModalP
   }, [state, handleBookingStatusChange]);
 
   // Polling fallback: check booking status every 5 seconds
-  // In case Realtime doesn't deliver the event (network issues, config, etc.)
   useEffect(() => {
     if (!bookingIdRef.current || state !== 'confirmed') return;
 
@@ -100,7 +118,7 @@ export default function BookingModal({ table, onClose, onBooked }: BookingModalP
     return () => clearInterval(interval);
   }, [state, handleBookingStatusChange]);
 
-  // Countdown timer
+  // Countdown timer — only runs in 'confirmed' (pending) state
   useEffect(() => {
     if (state !== 'confirmed' || !bookingCreatedAt) return;
 
@@ -206,6 +224,7 @@ export default function BookingModal({ table, onClose, onBooked }: BookingModalP
           <X size={20} />
         </button>
 
+        {/* ── FORM STATE ── */}
         {state === 'form' && (
           <>
             <h2 className="font-serif text-2xl font-bold text-stone-900 dark:text-white mb-1">
@@ -311,6 +330,7 @@ export default function BookingModal({ table, onClose, onBooked }: BookingModalP
           </>
         )}
 
+        {/* ── SUBMITTING ── */}
         {state === 'submitting' && (
           <div className="flex flex-col items-center py-12">
             <div className="h-10 w-10 animate-spin rounded-full border-4 border-amber-500/30 border-t-amber-500" />
@@ -318,8 +338,9 @@ export default function BookingModal({ table, onClose, onBooked }: BookingModalP
           </div>
         )}
 
+        {/* ── PENDING: "Table Requested!" — amber clock, countdown ── */}
         {state === 'confirmed' && (
-          <div className="flex flex-col items-center py-6 text-center">
+          <div className="flex flex-col items-center py-6 text-center animate-fadeIn">
             <div className="mb-4 rounded-full bg-amber-50 dark:bg-amber-500/10 p-3">
               <Clock size={40} className="text-amber-600 dark:text-amber-400" />
             </div>
@@ -351,41 +372,76 @@ export default function BookingModal({ table, onClose, onBooked }: BookingModalP
           </div>
         )}
 
-        {/* Admin confirmed the booking */}
+        {/* ── TRANSITIONING — brief blank pause before confirmed popup ── */}
+        {state === 'transitioning' && (
+          <div className="flex flex-col items-center py-12">
+            <div className="h-8 w-8 animate-spin rounded-full border-4 border-emerald-500/30 border-t-emerald-500" />
+          </div>
+        )}
+
+        {/* ── ADMIN CONFIRMED: distinct new popup — green check, no countdown ── */}
         {state === 'admin_confirmed' && (
-          <div className="flex flex-col items-center py-6 text-center">
-            <div className="mb-4 rounded-full bg-emerald-50 dark:bg-emerald-500/10 p-4">
-              <CheckCircle2 size={48} className="text-emerald-600 dark:text-emerald-400" />
+          <div className="flex flex-col items-center py-6 text-center animate-fadeIn">
+            {/* Ambient glow */}
+            <div className="absolute inset-0 rounded-t-3xl sm:rounded-3xl bg-emerald-500/[0.03] pointer-events-none" />
+
+            {/* Big green checkmark — visually nothing like the amber clock */}
+            <div className="mb-5 relative">
+              <div className="absolute inset-0 rounded-full bg-emerald-400/20 blur-xl scale-150" />
+              <div className="relative rounded-full bg-emerald-500/15 border-2 border-emerald-500/30 p-5">
+                <CheckCircle2 size={52} className="text-emerald-400" strokeWidth={1.5} />
+              </div>
             </div>
-            <h2 className="font-serif text-2xl font-bold text-stone-900 dark:text-white mb-2">
-              Booking Confirmed!
+
+            <h2 className="font-serif text-3xl font-bold text-white mb-2">
+              You&apos;re All Set!
             </h2>
-            <p className="text-sm text-stone-500 dark:text-white/50 mb-2">
-              Booking Ref: <span className="font-mono text-amber-600 dark:text-amber-400 font-bold">{bookingRef}</span>
-            </p>
-            <p className="text-sm text-emerald-600 dark:text-emerald-400 font-medium leading-relaxed mb-6 max-w-sm">
-              Your table has been confirmed by the staff. Please proceed to your table. Enjoy your time at SkyDeck!
+            <p className="text-sm text-emerald-400 font-medium mb-1">Table Confirmed by Staff</p>
+            <p className="text-xs text-white/40 mb-6">
+              Ref: <span className="font-mono text-amber-400 font-bold">{bookingRef}</span>
             </p>
 
-            <div className="rounded-2xl border border-emerald-200 dark:border-emerald-500/20 bg-emerald-50 dark:bg-emerald-500/10 px-6 py-4 backdrop-blur-sm">
-              <p className="text-xs text-emerald-600/70 dark:text-emerald-400/60 uppercase tracking-wider mb-1">
-                Status
-              </p>
-              <p className="font-semibold text-lg text-emerald-700 dark:text-emerald-300">
-                ✓ Confirmed &amp; Seated
-              </p>
+            {/* Confirmed details card — replaces the countdown timer */}
+            <div className="w-full rounded-2xl border border-emerald-500/20 bg-emerald-500/[0.07] px-5 py-4 mb-6 text-left">
+              <div className="grid grid-cols-2 gap-3 text-sm">
+                <div>
+                  <p className="text-[10px] uppercase tracking-wider text-white/30 mb-0.5">Table</p>
+                  <p className="font-bold text-white">{table.label}</p>
+                </div>
+                <div>
+                  <p className="text-[10px] uppercase tracking-wider text-white/30 mb-0.5">Zone</p>
+                  <p className="font-bold text-emerald-300">{table.zone}</p>
+                </div>
+                <div>
+                  <p className="text-[10px] uppercase tracking-wider text-white/30 mb-0.5">Guests</p>
+                  <p className="font-bold text-white">{partySize}</p>
+                </div>
+                <div>
+                  <p className="text-[10px] uppercase tracking-wider text-white/30 mb-0.5">Status</p>
+                  <p className="font-bold text-emerald-400 flex items-center gap-1">
+                    <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                    Confirmed
+                  </p>
+                </div>
+              </div>
             </div>
+
+            {/* Direction hint */}
+            <p className="text-sm text-white/50 flex items-center gap-1.5 mb-6">
+              <MapPin size={14} className="text-emerald-400 shrink-0" />
+              Please head to the <span className="text-emerald-300 font-medium">{table.zone}</span> host stand
+            </p>
 
             <button
               onClick={onClose}
-              className="mt-6 w-full rounded-xl bg-gradient-to-r from-emerald-600 to-emerald-500 px-6 py-3 font-semibold text-white shadow-lg shadow-emerald-400/25 dark:shadow-emerald-500/20 transition-all hover:shadow-emerald-400/40 dark:hover:shadow-emerald-500/40 active:scale-[0.98]"
+              className="w-full rounded-xl bg-emerald-600 px-6 py-3.5 font-semibold text-white shadow-lg shadow-emerald-600/25 transition-all hover:bg-emerald-500 hover:shadow-emerald-500/35 active:scale-[0.98]"
             >
-              Done
+              Let&apos;s Go! 🎉
             </button>
           </div>
         )}
 
-        {/* Admin cancelled / released the booking */}
+        {/* ── ADMIN CANCELLED ── */}
         {state === 'admin_cancelled' && (
           <div className="flex flex-col items-center py-6 text-center">
             <div className="mb-4 rounded-full bg-red-50 dark:bg-red-500/10 p-4">
@@ -407,7 +463,7 @@ export default function BookingModal({ table, onClose, onBooked }: BookingModalP
           </div>
         )}
 
-        {/* Booking expired */}
+        {/* ── EXPIRED ── */}
         {state === 'expired' && (
           <div className="flex flex-col items-center py-6 text-center">
             <div className="mb-4 rounded-full bg-stone-100 dark:bg-white/5 p-4">
@@ -429,6 +485,7 @@ export default function BookingModal({ table, onClose, onBooked }: BookingModalP
           </div>
         )}
 
+        {/* ── ERROR ── */}
         {state === 'error' && (
           <div className="flex flex-col items-center py-6 text-center">
             <div className="mb-4 rounded-full bg-red-50 dark:bg-red-500/10 p-3">

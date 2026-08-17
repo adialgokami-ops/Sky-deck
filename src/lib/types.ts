@@ -30,7 +30,7 @@ export interface Booking {
 
 // ---- Constants ----
 
-export const ZONES = ['Rooftop', 'Indoor AC', 'Outdoor'] as const;
+export const ZONES = ['Rooftop', 'Indoor AC', 'Outdoor', 'Family Bar'] as const;
 export type Zone = (typeof ZONES)[number];
 
 /** Pending bookings auto-expire after this many minutes. */

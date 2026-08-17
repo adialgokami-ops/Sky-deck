@@ -35,6 +35,16 @@ const zones = [
     accentBorder: 'rgba(122,155,107,0.15)',
     description: 'Garden-side seating surrounded by greenery — perfect for relaxed evenings.',
   },
+  {
+    name: 'Family Bar',
+    image: '/images/zone-familybar.jpg',
+    seats: '2–10',
+    bestFor: 'Families, casual groups, live buzz',
+    accent: '#C8694A',
+    accentBg: 'rgba(200,105,74,0.08)',
+    accentBorder: 'rgba(200,105,74,0.15)',
+    description: 'Bar-height and lounge seating with a kid-friendly menu — lively, relaxed, and family-first.',
+  },
 ];
 
 export default function ZonesShowcase() {
@@ -47,13 +57,14 @@ export default function ZonesShowcase() {
 
       <div ref={revealRef} className="reveal relative mx-auto max-w-7xl px-5 sm:px-8">
         <div className="text-center mb-16">
-          <p className="text-sm font-medium tracking-[0.2em] uppercase text-[#D98E3F] mb-4">Three Zones</p>
+          <p className="text-sm font-medium tracking-[0.2em] uppercase text-[#D98E3F] mb-4">Four Zones</p>
           <h2 className="font-display text-3xl sm:text-4xl lg:text-5xl font-bold text-[#F4EFE8] tracking-tight">
             Choose your atmosphere
           </h2>
         </div>
 
-        <div className="grid md:grid-cols-3 gap-6">
+        {/* 2×2 on mobile, 4-across on desktop */}
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 sm:gap-5">
           {zones.map((zone) => (
             <div
               key={zone.name}
@@ -74,7 +85,7 @@ export default function ZonesShowcase() {
                 <div className="absolute inset-0 bg-gradient-to-t from-[#12100E]/80 to-transparent" />
                 {/* Best for tag */}
                 <div
-                  className="absolute top-4 left-4 rounded-full px-3 py-1.5 text-xs font-medium backdrop-blur-md border"
+                  className="absolute top-3 left-3 rounded-full px-2.5 py-1 text-[10px] sm:text-xs font-medium backdrop-blur-md border"
                   style={{
                     color: zone.accent,
                     backgroundColor: `${zone.accent}15`,
@@ -86,24 +97,24 @@ export default function ZonesShowcase() {
               </div>
 
               {/* Content */}
-              <div className="p-6">
-                <div className="flex items-center justify-between mb-3">
-                  <h3 className="font-display text-2xl font-bold text-[#F4EFE8]">{zone.name}</h3>
-                  <span className="text-sm text-[#A69E93]">{zone.seats} seats</span>
+              <div className="p-4 sm:p-5">
+                <div className="flex items-start justify-between mb-2 gap-1">
+                  <h3 className="font-display text-base sm:text-xl font-bold text-[#F4EFE8] leading-tight">{zone.name}</h3>
+                  <span className="text-[10px] sm:text-xs text-[#A69E93] shrink-0 mt-0.5">{zone.seats}</span>
                 </div>
-                <p className="text-sm text-[#A69E93] leading-relaxed mb-5">
+                <p className="text-xs text-[#A69E93] leading-relaxed mb-4 hidden sm:block">
                   {zone.description}
                 </p>
                 <Link
                   href="/book"
-                  className="block w-full rounded-xl py-3 text-center text-sm font-semibold transition-all border"
+                  className="block w-full rounded-xl py-2 sm:py-2.5 text-center text-xs sm:text-sm font-semibold transition-all border"
                   style={{
                     color: zone.accent,
                     borderColor: `${zone.accent}30`,
                     backgroundColor: `${zone.accent}10`,
                   }}
                 >
-                  Reserve this zone →
+                  Reserve →
                 </Link>
               </div>
             </div>
